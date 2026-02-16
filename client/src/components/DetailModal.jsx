@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { useQuery } from '@tanstack/react-query';
 import { X, Play, Plus, Eye, Download, ArrowLeft, ArrowDownNarrowWide, Star, Calendar, Clock } from 'lucide-react';
 import MediaCard from './MediaCard';
 import DownloadModal from './DownloadModal';
+import { ModalSkeleton, SeasonListSkeleton, EpisodeListSkeleton } from './Skeleton';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 const TMDB_POSTER_BASE = 'https://image.tmdb.org/t/p/w500';
@@ -40,12 +42,8 @@ function formatDuration(time) {
 export default function DetailModal({ item, onClose, onPlay }) {
     const [currentItem, setCurrentItem] = useState(item);
     const [history, setHistory] = useState([]);
-    const [details, setDetails] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [animeData, setAnimeData] = useState(null);
-    const [animeSeasons, setAnimeSeasons] = useState([]);
+    // const [loading, setLoading] = useState(true); // Replaced by React Query
     const [currentAnimeId, setCurrentAnimeId] = useState(null);
-    const [seasonData, setSeasonData] = useState(null);
     const [selectedSeason, setSelectedSeason] = useState(1);
     const [isClosing, setIsClosing] = useState(false);
     const [showDownloadModal, setShowDownloadModal] = useState(false);
@@ -61,87 +59,82 @@ export default function DetailModal({ item, onClose, onPlay }) {
         };
     }, []);
 
-    // Fetch Main Details
-    useEffect(() => {
-        async function fetchDetails() {
-            setLoading(true);
-            setAnimeData(null);
-            setAnimeSeasons([]);
-            setCurrentAnimeId(null);
-            try {
-                const type = currentItem.media_type || (currentItem.title ? 'movie' : 'tv');
-                const res = await axios.get(`${BACKEND_URL}/api/details/${type}/${currentItem.id}`);
+    // 1. Fetch Main Details
+    const { data: details, isLoading: detailsLoading } = useQuery({
+        queryKey: ['details', currentItem.media_type || (currentItem.title ? 'movie' : 'tv'), currentItem.id],
+        queryFn: async () => {
+            const type = currentItem.media_type || (currentItem.title ? 'movie' : 'tv');
+            const res = await axios.get(`${BACKEND_URL}/api/details/${type}/${currentItem.id}`);
 
-                // Preload High-Res Background Image
-                const backdropPath = res.data.backdrop_path || currentItem.backdrop_path;
-                if (backdropPath) {
-                    const img = new Image();
-                    img.src = `${TMDB_IMAGE_BASE}${backdropPath}`;
-                    try {
-                        await img.decode();
-                    } catch (e) {
-                        // Continue even if image fails
-                    }
-                }
-
-                setDetails(res.data);
-
-                // If TV, fetch Season 1 immediately
-                if (type === 'tv') {
-                    await fetchSeason(currentItem.id, 1);
-                }
-            } catch (err) {
-                console.error("Failed to fetch details", err);
-            } finally {
-                setLoading(false);
+            // Preload High-Res Background Image
+            const backdropPath = res.data.backdrop_path || currentItem.backdrop_path;
+            if (backdropPath) {
+                const img = new Image();
+                img.src = `${TMDB_IMAGE_BASE}${backdropPath}`;
+                img.decode().catch(() => { });
             }
-        }
-        fetchDetails();
-    }, [currentItem]);
+            return res.data;
+        },
+        staleTime: 1000 * 60 * 30, // 30 mins
+    });
 
-    // Fetch Anime Data from Scraper
-    useEffect(() => {
-        if (!details) return;
+    // 2. Fetch Anime Seasons List (if Anime)
+    const title = details?.title || details?.name || currentItem.title || currentItem.name;
+    const isAnime = details?.original_language === 'ja' &&
+        details?.genres?.some(g => g.name === 'Animation') &&
+        (currentItem.media_type === 'tv' || details?.number_of_seasons);
 
-        const title = details.title || details.name || currentItem.title || currentItem.name;
-        const isAnime = details.original_language === 'ja' &&
-            details.genres?.some(g => g.name === 'Animation') &&
-            (currentItem.media_type === 'tv' || details.number_of_seasons);
-
-        if (isAnime && title) {
-            async function fetchAnime() {
-                try {
-                    const searchRes = await axios.get(`${CONSUMET_URL}/anime/animepahe/${encodeURIComponent(title)}`);
-                    if (searchRes.data.results?.length > 0) {
-                        // Filter results to ensure relevance (simple inclusion check)
-                        let validSeasons = searchRes.data.results.filter(r =>
-                            r.title.toLowerCase().includes(title.toLowerCase())
-                        );
-                        // Fallback if filter is too strict (e.g. language mismatch)
-                        if (validSeasons.length === 0) validSeasons = searchRes.data.results;
-
-                        // Sort by release year
-                        validSeasons.sort((a, b) => {
-                            const yearA = parseInt(String(a.releaseDate || "").match(/\d{4}/)?.[0] || "0");
-                            const yearB = parseInt(String(b.releaseDate || "").match(/\d{4}/)?.[0] || "0");
-                            return yearA - yearB;
-                        });
-                        setAnimeSeasons(validSeasons);
-
-                        const match = validSeasons.find(r => r.title.toLowerCase() === title.toLowerCase()) || validSeasons[0];
-                        if (match) {
-                            setCurrentAnimeId(match.id);
-                            const infoRes = await axios.get(`${CONSUMET_URL}/anime/animepahe/info/${match.id}`);
-                            setAnimeData(infoRes.data);
-                        }
-                    }
-                } catch (err) {
-                    console.error("Failed to fetch anime data", err);
-                }
+    const { data: animeSeasons = [], isLoading: animeSeasonsLoading } = useQuery({
+        queryKey: ['anime_search', title],
+        queryFn: async () => {
+            const searchRes = await axios.get(`${CONSUMET_URL}/anime/animepahe/${encodeURIComponent(title)}`);
+            if (searchRes.data.results?.length > 0) {
+                let validSeasons = searchRes.data.results.filter(r =>
+                    r.title.toLowerCase().includes(title.toLowerCase())
+                );
+                if (validSeasons.length === 0) validSeasons = searchRes.data.results;
+                validSeasons.sort((a, b) => {
+                    const yearA = parseInt(String(a.releaseDate || "").match(/\d{4}/)?.[0] || "0");
+                    const yearB = parseInt(String(b.releaseDate || "").match(/\d{4}/)?.[0] || "0");
+                    return yearA - yearB;
+                });
+                return validSeasons;
             }
-            fetchAnime();
+            return [];
+        },
+        enabled: !!isAnime && !!title,
+        staleTime: 1000 * 60 * 60,
+    });
+
+    // Set initial anime ID when seasons load
+    useEffect(() => {
+        if (animeSeasons.length > 0 && !currentAnimeId) {
+            const match = animeSeasons.find(r => r.title.toLowerCase() === title.toLowerCase()) || animeSeasons[0];
+            if (match) setCurrentAnimeId(match.id);
         }
-    }, [details, currentItem]);
+    }, [animeSeasons, title, currentAnimeId]);
+
+    // 3. Fetch Specific Anime Season Data
+    const { data: animeData, isLoading: animeDataLoading } = useQuery({
+        queryKey: ['anime_info', currentAnimeId],
+        queryFn: async () => {
+            const infoRes = await axios.get(`${CONSUMET_URL}/anime/animepahe/info/${currentAnimeId}`);
+            return infoRes.data;
+        },
+        enabled: !!currentAnimeId,
+        staleTime: 1000 * 60 * 60,
+    });
+
+    // 4. Fetch TMDB Season Details (if TV)
+    const { data: seasonData, isLoading: seasonDataLoading } = useQuery({
+        queryKey: ['season', currentItem.id, selectedSeason],
+        queryFn: async () => {
+            const res = await axios.get(`${BACKEND_URL}/api/details/tv/${currentItem.id}/season/${selectedSeason}`);
+            return res.data;
+        },
+        enabled: !!details && (currentItem.media_type === 'tv' || !!details.seasons),
+        staleTime: 1000 * 60 * 30,
+    });
 
     // Scroll to top when item changes
     useEffect(() => {
@@ -150,27 +143,11 @@ export default function DetailModal({ item, onClose, onPlay }) {
         }
     }, [currentItem]);
 
-    // Fetch Specific Anime Season (Switching tabs)
-    async function fetchAnimeSeason(animeId) {
-        try {
-            setCurrentAnimeId(animeId);
-            const infoRes = await axios.get(`${CONSUMET_URL}/anime/animepahe/info/${animeId}`);
-            setAnimeData(infoRes.data);
-        } catch (err) {
-            console.error("Failed to fetch anime season", err);
-        }
-    }
-
-    // Fetch Season Details
-    async function fetchSeason(tvId, seasonNum) {
-        try {
-            const res = await axios.get(`${BACKEND_URL}/api/details/tv/${tvId}/season/${seasonNum}`);
-            setSeasonData(res.data);
-            setSelectedSeason(seasonNum);
-        } catch (err) {
-            console.error("Failed to fetch season", err);
-        }
-    }
+    // Reset state when item changes
+    useEffect(() => {
+        setCurrentAnimeId(null);
+        setSelectedSeason(1);
+    }, [currentItem.id]);
 
     const handleClose = () => {
         setIsClosing(true);
@@ -178,27 +155,14 @@ export default function DetailModal({ item, onClose, onPlay }) {
     };
 
     const handleRecommendationClick = (newItem) => {
-        setLoading(true);
         setHistory([...history, currentItem]);
         setCurrentItem(newItem);
-        setDetails(null);
-        setAnimeData(null);
-        setAnimeSeasons([]);
-        setCurrentAnimeId(null);
-        setSeasonData(null);
     };
 
     const handleBack = () => {
-        setLoading(true);
         const prevItem = history[history.length - 1];
         setHistory(history.slice(0, -1));
         setCurrentItem(prevItem);
-        setDetails(null);
-        setAnimeData(null);
-        setAnimeSeasons([]);
-        setCurrentAnimeId(null);
-        setAnimeData(null);
-        setSeasonData(null);
     };
 
     const handleDownload = async (episodesToDownload, options = {}) => {
@@ -241,7 +205,7 @@ export default function DetailModal({ item, onClose, onPlay }) {
 
     if (!currentItem) return null;
 
-    const title = details?.title || details?.name || currentItem.title || currentItem.name;
+    // const title = details?.title || details?.name || currentItem.title || currentItem.name; // Already defined above
     const backdrop = details?.backdrop_path || currentItem.backdrop_path;
     const year = (details?.release_date || details?.first_air_date || currentItem.release_date || currentItem.first_air_date || '????').split('-')[0];
     const fullDate = details?.release_date || details?.first_air_date || currentItem.release_date || currentItem.first_air_date;
@@ -251,7 +215,7 @@ export default function DetailModal({ item, onClose, onPlay }) {
     const keywords = details?.keywords?.keywords || details?.keywords?.results || [];
     const cast = details?.credits?.cast?.slice(0, 10) || [];
 
-    const isAnimeContent = details?.original_language === 'ja' && genres.some(g => g.name === 'Animation');
+    const isAnimeContent = isAnime; // Re-use logic
     let rawRecommendations = (details?.recommendations?.results?.length > 0
         ? details.recommendations.results
         : details?.similar?.results) || [];
@@ -294,14 +258,13 @@ export default function DetailModal({ item, onClose, onPlay }) {
                 </button>
 
                 {/* Loading State */}
-                {loading && (
-                    <div className="absolute inset-0 z-40 bg-surface flex flex-col items-center justify-center">
-                        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
-                        <p className="text-textMuted text-xs font-bold uppercase tracking-widest animate-pulse">Loading...</p>
+                {detailsLoading && (
+                    <div className="absolute inset-0 z-40 bg-surface overflow-hidden">
+                        <ModalSkeleton />
                     </div>
                 )}
 
-                <div ref={scrollContainerRef} className={`flex-1 overflow-y-auto transition-opacity duration-500 ease-in-out ${loading ? 'opacity-0' : 'opacity-100'}`}>
+                <div ref={scrollContainerRef} className={`flex-1 overflow-y-auto transition-opacity duration-500 ease-in-out ${detailsLoading ? 'opacity-0' : 'opacity-100'}`}>
                     {/* HERO BANNER */}
                     <div className="relative h-[385px] lg:h-[500px] w-full shrink-0">
                         <img
@@ -421,10 +384,12 @@ export default function DetailModal({ item, onClose, onPlay }) {
                             </div>
 
                             {/* TV SEASONS SECTION */}
-                            {isTV && (animeData ? (
+                            {isTV && ((isAnime || animeData) ? (
                                 <div className="flex-1 flex flex-col">
                                     {/* Anime Season Selector */}
-                                    {animeSeasons.length > 0 && (showSingleSeason || animeSeasons.length > 1) && (
+                                    {animeSeasonsLoading ? (
+                                        <SeasonListSkeleton />
+                                    ) : animeSeasons.length > 0 && (showSingleSeason || animeSeasons.length > 1) && (
                                         <>
                                             <h3 className="text-sm font-bold text-textMuted uppercase tracking-wider mb-4">Seasons</h3>
                                             <div className="flex overflow-x-auto pb-4 mb-8 px-1 items-start">
@@ -434,7 +399,7 @@ export default function DetailModal({ item, onClose, onPlay }) {
                                                     return (
                                                         <button
                                                             key={season.id}
-                                                            onClick={() => fetchAnimeSeason(season.id)}
+                                                            onClick={() => setCurrentAnimeId(season.id)}
                                                             title={season.title}
                                                             className={`flex-shrink-0 w-44 p-3 flex flex-col gap-3 group text-left cursor-pointer relative rounded-xl transition-all ${isSelected ? 'bg-primary/10' : 'hover:bg-surfaceHighlight'}`}
                                                         >
@@ -459,11 +424,19 @@ export default function DetailModal({ item, onClose, onPlay }) {
                                         </>
                                     )}
 
-                                    <h3 className="text-lg font-bold text-textMain normal-case tracking-tight mb-4">
-                                        {(animeData.type === 'Movie' || animeSeasons.find(s => s.id === currentAnimeId)?.type === 'Movie') ? 'Movie' : 'Episodes'} <span className="text-textMain normal-case ml-1">- {animeData.title} ({String(animeData.releaseDate || "").match(/\d{4}/)?.[0] || ''})</span>
-                                    </h3>
-                                    <div className="bg-surface border border-border rounded-xl overflow-hidden flex flex-col max-h-[600px]">
-                                        <style>{`
+                                    {animeData ? (
+                                        <h3 className="text-lg font-bold text-textMain normal-case tracking-tight mb-4">
+                                            {(animeData.type === 'Movie' || animeSeasons.find(s => s.id === currentAnimeId)?.type === 'Movie') ? 'Movie' : 'Episodes'} <span className="text-textMain normal-case ml-1">- {animeData.title} ({String(animeData.releaseDate || "").match(/\d{4}/)?.[0] || ''})</span>
+                                        </h3>
+                                    ) : (
+                                        <div className="h-7 w-1/3 bg-surfaceHighlight rounded mb-4 animate-pulse" />
+                                    )}
+
+                                    {animeDataLoading ? (
+                                        <EpisodeListSkeleton />
+                                    ) : animeData ? (
+                                        <div className="bg-surface border border-border rounded-xl overflow-hidden flex flex-col max-h-[600px] min-h-[200px]">
+                                            <style>{`
                                             .custom-scrollbar::-webkit-scrollbar {
                                                 display: block;
                                                 width: 6px;
@@ -479,64 +452,69 @@ export default function DetailModal({ item, onClose, onPlay }) {
                                                 background-color: rgba(156, 163, 175, 0.8);
                                             }
                                         `}</style>
-                                        <div className="overflow-y-auto custom-scrollbar flex-1">
-                                            {animeData.episodes?.map((ep, idx) => (
-                                                <div
-                                                    key={ep.id}
-                                                    onClick={() => onPlay({
-                                                        ...currentItem,
-                                                        title: animeData.title, // Use scraper title
-                                                        episodeNumber: ep.number,
-                                                        seasonNumber: 1,
-                                                        episodeId: ep.id,
-                                                        episodeTitle: ep.title || `Episode ${ep.number}`,
-                                                        image: ep.image
-                                                    })}
-                                                    className={`flex gap-4 p-3 items-center transition-colors cursor-pointer group border-b border-border last:border-b-0 ${idx % 2 === 0 ? 'bg-surface' : 'bg-surfaceHighlight'} hover:bg-primary/10`}
-                                                >
-                                                    <div className="w-8 shrink-0 text-center">
-                                                        <span className="font-mono text-base font-bold text-textMuted/40 group-hover:text-textMain transition-colors">
-                                                            {ep.number}
-                                                        </span>
-                                                    </div>
-                                                    <div className="w-32 aspect-video rounded-lg overflow-hidden bg-black/20 shrink-0 relative">
-                                                        {ep.image ? (
-                                                            <img src={ep.image} alt={ep.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                                        ) : (
-                                                            <div className="w-full h-full flex items-center justify-center text-textMuted"><Play className="w-6 h-6" /></div>
-                                                        )}
-                                                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
-                                                            <Play className="w-8 h-8 text-white fill-current" />
+                                            <div className="overflow-y-auto custom-scrollbar flex-1">
+                                                {animeData.episodes?.map((ep, idx) => (
+                                                    <div
+                                                        key={ep.id}
+                                                        onClick={() => onPlay({
+                                                            ...currentItem,
+                                                            title: animeData.title, // Use scraper title
+                                                            episodeNumber: ep.number,
+                                                            seasonNumber: 1,
+                                                            episodeId: ep.id,
+                                                            episodeTitle: ep.title || `Episode ${ep.number}`,
+                                                            image: ep.image
+                                                        })}
+                                                        className={`flex gap-4 p-3 items-center transition-colors cursor-pointer group border-b border-border last:border-b-0 ${idx % 2 === 0 ? 'bg-surface' : 'bg-surfaceHighlight'} hover:bg-primary/10`}
+                                                    >
+                                                        <div className="w-8 shrink-0 text-center">
+                                                            <span className="font-mono text-base font-bold text-textMuted/40 group-hover:text-textMain transition-colors">
+                                                                {ep.number}
+                                                            </span>
+                                                        </div>
+                                                        <div className="w-32 aspect-video rounded-lg overflow-hidden bg-black/20 shrink-0 relative">
+                                                            {ep.image ? (
+                                                                <img src={ep.image} alt={ep.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                                            ) : (
+                                                                <div className="w-full h-full flex items-center justify-center text-textMuted"><Play className="w-6 h-6" /></div>
+                                                            )}
+                                                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
+                                                                <Play className="w-8 h-8 text-white fill-current" />
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex-1 flex flex-col justify-center">
+                                                            <h4 className="font-bold text-textMain group-hover:text-primary transition-colors">
+                                                                {ep.title || ((animeSeasons.find(s => s.id === currentAnimeId)?.type === 'Movie' || animeData.type === 'Movie') ? animeData.title : `Episode ${ep.number}`)}
+                                                            </h4>
+                                                            {ep.duration && (
+                                                                <div className="flex items-center gap-1.5 mt-2 px-2 py-1 rounded border border-border w-fit">
+                                                                    <Clock className="w-3 h-3 text-textMuted" />
+                                                                    <span className="text-xs font-medium text-textMuted">{formatDuration(ep.duration)}</span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setDownloadEpisodes([ep]);
+                                                                    setShowDownloadModal(true);
+                                                                }}
+                                                                className="p-2.5 rounded-full hover:bg-surfaceHighlight text-textMuted hover:text-textMain transition-colors"
+                                                                title="Download"
+                                                            >
+                                                                <Download className="w-5 h-5" />
+                                                            </button>
                                                         </div>
                                                     </div>
-                                                    <div className="flex-1 flex flex-col justify-center">
-                                                        <h4 className="font-bold text-textMain group-hover:text-primary transition-colors">
-                                                            {ep.title || ((animeSeasons.find(s => s.id === currentAnimeId)?.type === 'Movie' || animeData.type === 'Movie') ? animeData.title : `Episode ${ep.number}`)}
-                                                        </h4>
-                                                        {ep.duration && (
-                                                            <div className="flex items-center gap-1.5 mt-2 px-2 py-1 rounded border border-border w-fit">
-                                                                <Clock className="w-3 h-3 text-textMuted" />
-                                                                <span className="text-xs font-medium text-textMuted">{formatDuration(ep.duration)}</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex items-center gap-1">
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setDownloadEpisodes([ep]);
-                                                                setShowDownloadModal(true);
-                                                            }}
-                                                            className="p-2.5 rounded-full hover:bg-surfaceHighlight text-textMuted hover:text-textMain transition-colors"
-                                                            title="Download"
-                                                        >
-                                                            <Download className="w-5 h-5" />
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ))}
+                                                ))}
+                                            </div>
                                         </div>
-                                    </div>
+                                    ) : (
+                                        <div className="p-8 text-center text-textMuted border border-border rounded-xl bg-surfaceHighlight/20">
+                                            <p>No episodes found.</p>
+                                        </div>
+                                    )}
                                 </div>
                             ) : details?.seasons && (
                                 <div className="flex-1 flex flex-col">
@@ -547,7 +525,7 @@ export default function DetailModal({ item, onClose, onPlay }) {
                                                 {details.seasons.filter(s => s.season_number > 0).map(season => (
                                                     <button
                                                         key={season.id}
-                                                        onClick={() => fetchSeason(currentItem.id, season.season_number)}
+                                                        onClick={() => setSelectedSeason(season.season_number)}
                                                         className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${selectedSeason === season.season_number
                                                             ? 'bg-primary text-white'
                                                             : 'bg-surfaceHighlight text-textMuted hover:text-textMain'
@@ -561,8 +539,11 @@ export default function DetailModal({ item, onClose, onPlay }) {
                                     )}
 
                                     {/* EPISODE LIST */}
-                                    <div className="bg-surface border border-border rounded-xl overflow-hidden flex flex-col min-h-[400px] max-h-[600px]">
-                                        <style>{`
+                                    {seasonDataLoading ? (
+                                        <EpisodeListSkeleton />
+                                    ) : (
+                                        <div className="bg-surface border border-border rounded-xl overflow-hidden flex flex-col min-h-[200px] max-h-[600px]">
+                                            <style>{`
                                             .custom-scrollbar::-webkit-scrollbar {
                                                 display: block;
                                                 width: 6px;
@@ -578,73 +559,74 @@ export default function DetailModal({ item, onClose, onPlay }) {
                                                 background-color: rgba(156, 163, 175, 0.8);
                                             }
                                         `}</style>
-                                        <div className="overflow-y-auto custom-scrollbar flex-1">
-                                            {seasonData?.episodes?.map((ep, idx) => (
-                                                <div
-                                                    key={ep.id}
-                                                    onClick={() => onPlay({ ...currentItem, episodeNumber: ep.episode_number, seasonNumber: ep.season_number, episodeTitle: ep.name, episodes: seasonData.episodes })}
-                                                    className={`flex gap-4 p-3 items-center transition-colors cursor-pointer group border-b border-border last:border-b-0 ${idx % 2 === 0 ? 'bg-surface' : 'bg-surfaceHighlight'} hover:bg-primary/10`}
-                                                >
-                                                    <div className="w-32 aspect-video rounded-lg overflow-hidden bg-black/20 shrink-0 relative">
-                                                        {ep.still_path ? (
-                                                            <img src={`${TMDB_POSTER_BASE}${ep.still_path}`} alt={ep.name} className="w-full h-full object-cover" />
-                                                        ) : (
-                                                            <div className="w-full h-full flex items-center justify-center text-textMuted"><Play className="w-6 h-6" /></div>
-                                                        )}
-                                                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
-                                                            <Play className="w-8 h-8 text-white fill-current" />
+                                            <div className="overflow-y-auto custom-scrollbar flex-1">
+                                                {seasonData?.episodes?.map((ep, idx) => (
+                                                    <div
+                                                        key={ep.id}
+                                                        onClick={() => onPlay({ ...currentItem, episodeNumber: ep.episode_number, seasonNumber: ep.season_number, episodeTitle: ep.name, episodes: seasonData.episodes })}
+                                                        className={`flex gap-4 p-3 items-center transition-colors cursor-pointer group border-b border-border last:border-b-0 ${idx % 2 === 0 ? 'bg-surface' : 'bg-surfaceHighlight'} hover:bg-primary/10`}
+                                                    >
+                                                        <div className="w-32 aspect-video rounded-lg overflow-hidden bg-black/20 shrink-0 relative">
+                                                            {ep.still_path ? (
+                                                                <img src={`${TMDB_POSTER_BASE}${ep.still_path}`} alt={ep.name} className="w-full h-full object-cover" />
+                                                            ) : (
+                                                                <div className="w-full h-full flex items-center justify-center text-textMuted"><Play className="w-6 h-6" /></div>
+                                                            )}
+                                                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
+                                                                <Play className="w-8 h-8 text-white fill-current" />
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex-1 flex flex-col justify-center">
+                                                            <div className="flex items-center justify-between mb-1">
+                                                                <h4 className="font-bold text-textMain group-hover:text-primary transition-colors">
+                                                                    {ep.episode_number}. {ep.name}
+                                                                </h4>
+                                                            </div>
+                                                            <div className="flex items-center gap-2 mt-1 mb-2 flex-wrap">
+                                                                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-border text-xs font-medium text-gray-500 dark:text-gray-500">
+                                                                    <Star className="w-3 h-3" /> {ep.vote_average?.toFixed(1)}
+                                                                </span>
+                                                                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-border text-xs font-medium text-gray-500 dark:text-gray-500">
+                                                                    <Clock className="w-3 h-3" /> {ep.runtime}m
+                                                                </span>
+                                                                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-border text-xs font-medium text-gray-500 dark:text-gray-500">
+                                                                    <Calendar className="w-3 h-3" /> {ep.air_date ? new Date(ep.air_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'TBA'}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-xs text-gray-500 dark:text-gray-500 line-clamp-2 leading-relaxed">{ep.overview}</p>
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); }}
+                                                                className="p-2.5 rounded-full hover:bg-surfaceHighlight text-textMuted hover:text-textMain transition-colors"
+                                                                title="Mark as Watched"
+                                                            >
+                                                                <Eye className="w-5 h-5" />
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); }}
+                                                                className="p-2.5 rounded-full hover:bg-surfaceHighlight text-textMuted hover:text-textMain transition-colors"
+                                                                title="Download"
+                                                            >
+                                                                <Download className="w-5 h-5" />
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setDownloadEpisodes([ep]);
+                                                                    setShowDownloadModal(true);
+                                                                }}
+                                                                className="p-2.5 rounded-full hover:bg-surfaceHighlight text-textMuted hover:text-textMain transition-colors"
+                                                                title="Download"
+                                                            >
+                                                                <Download className="w-5 h-5" />
+                                                            </button>
                                                         </div>
                                                     </div>
-                                                    <div className="flex-1 flex flex-col justify-center">
-                                                        <div className="flex items-center justify-between mb-1">
-                                                            <h4 className="font-bold text-textMain group-hover:text-primary transition-colors">
-                                                                {ep.episode_number}. {ep.name}
-                                                            </h4>
-                                                        </div>
-                                                        <div className="flex items-center gap-2 mt-1 mb-2 flex-wrap">
-                                                            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-border text-xs font-medium text-gray-500 dark:text-gray-500">
-                                                                <Star className="w-3 h-3" /> {ep.vote_average?.toFixed(1)}
-                                                            </span>
-                                                            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-border text-xs font-medium text-gray-500 dark:text-gray-500">
-                                                                <Clock className="w-3 h-3" /> {ep.runtime}m
-                                                            </span>
-                                                            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-border text-xs font-medium text-gray-500 dark:text-gray-500">
-                                                                <Calendar className="w-3 h-3" /> {ep.air_date ? new Date(ep.air_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'TBA'}
-                                                            </span>
-                                                        </div>
-                                                        <p className="text-xs text-gray-500 dark:text-gray-500 line-clamp-2 leading-relaxed">{ep.overview}</p>
-                                                    </div>
-                                                    <div className="flex items-center gap-1">
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); }}
-                                                            className="p-2.5 rounded-full hover:bg-surfaceHighlight text-textMuted hover:text-textMain transition-colors"
-                                                            title="Mark as Watched"
-                                                        >
-                                                            <Eye className="w-5 h-5" />
-                                                        </button>
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); }}
-                                                            className="p-2.5 rounded-full hover:bg-surfaceHighlight text-textMuted hover:text-textMain transition-colors"
-                                                            title="Download"
-                                                        >
-                                                            <Download className="w-5 h-5" />
-                                                        </button>
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setDownloadEpisodes([ep]);
-                                                                setShowDownloadModal(true);
-                                                            }}
-                                                            className="p-2.5 rounded-full hover:bg-surfaceHighlight text-textMuted hover:text-textMain transition-colors"
-                                                            title="Download"
-                                                        >
-                                                            <Download className="w-5 h-5" />
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ))}
+                                                ))}
+                                            </div>
                                         </div>
-                                    </div>
+                                    )}
                                 </div>
                             ))}
                         </div>

@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { useQuery } from '@tanstack/react-query';
 import { Navbar, MediaGrid, Player, LoadingOverlay, HeroCarousel, Settings, GenreList, DetailModal } from './components';
+import SplashScreen from './components/SplashScreen';
 
 // CONFIG
 const BACKEND_URL = 'http://localhost:3001';
@@ -10,55 +12,30 @@ const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
  * MAIN APP COMPONENT
  */
 export default function App() {
-  const [content, setContent] = useState({
-    trending: [],
-    airing: [],
-    movies: [],
-    classics: []
-  });
-  const [loading, setLoading] = useState(false);
+  // const [loading, setLoading] = useState(false); // Replaced by React Query isLoading
   const [streamData, setStreamData] = useState(null); // { url, poster }
   const [statusMsg, setStatusMsg] = useState('');
   const [defaultPage, setDefaultPage] = useState(() => localStorage.getItem('defaultPage') || 'home');
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('defaultPage') || 'home');
-  const dataCache = useRef({}); // Cache for tab data
   const streamCache = useRef({}); // Cache for stream URLs
   const [showSettings, setShowSettings] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'system');
   const [selectedMedia, setSelectedMedia] = useState(null); // For DetailModal
 
   // 1. Fetch Content on Mount & Tab Change
-  useEffect(() => {
-    async function fetchContent() {
+  const { data: content, isLoading: isContentLoading } = useQuery({
+    queryKey: ['content', activeTab],
+    queryFn: async () => {
       if (activeTab === 'mylist' || activeTab === 'watched') {
-        setContent({ trending: [], airing: [], movies: [], classics: [] });
-        return;
+        return { trending: [], airing: [], movies: [], classics: [] };
       }
-
-      // Check cache first for seamless switching
-      if (dataCache.current[activeTab]) {
-        setContent(dataCache.current[activeTab]);
-        return;
-      }
-
-      // Only show global loading overlay on initial load to prevent "refresh" feel
-      if (content.trending.length === 0) {
-        setLoading(true);
-      }
-
-      try {
-        const endpoint = activeTab === 'anime' ? '/api/anime' : '/api/home';
-        const res = await axios.get(`${BACKEND_URL}${endpoint}`);
-        dataCache.current[activeTab] = res.data; // Update cache
-        setContent(res.data);
-      } catch (err) {
-        console.error("Failed to fetch content:", err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchContent();
-  }, [activeTab]);
+      const endpoint = activeTab === 'anime' ? '/api/anime' : '/api/home';
+      const res = await axios.get(`${BACKEND_URL}${endpoint}`);
+      return res.data;
+    },
+    keepPreviousData: true,
+    staleTime: 1000 * 60 * 10, // 10 mins
+  });
 
   // 2. Handle Keyboard Shortcuts (Settings Toggle)
   useEffect(() => {
@@ -220,8 +197,10 @@ export default function App() {
     }
   };
 
+  if (isContentLoading && !content) return <SplashScreen />;
+
   return (
-    <div className="min-h-screen bg-background text-textMain select-none">
+    <div className="min-h-screen bg-background text-textMain select-none animate-in fade-in duration-700">
 
       {/* Global Styles for Scrollbar Hiding */}
       <style>{`
@@ -236,7 +215,7 @@ export default function App() {
 
       <Navbar activeTab={activeTab} setActiveTab={setActiveTab} onOpenSettings={() => setShowSettings(true)} />
 
-      {(activeTab === 'home' || activeTab === 'anime') ? (
+      {(activeTab === 'home' || activeTab === 'anime') && content ? (
         <>
           <HeroCarousel
             items={content.airing.slice(0, 12)}
@@ -269,8 +248,6 @@ export default function App() {
           <p className="text-xl">Coming Soon...</p>
         </div>
       )}
-
-      {loading && <LoadingOverlay message={statusMsg} />}
 
       {showSettings && (
         <Settings

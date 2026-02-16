@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useQueries } from '@tanstack/react-query';
 import { Play, Info, ChevronLeft, ChevronRight, Clock, Pause } from 'lucide-react';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
@@ -9,7 +10,6 @@ export default function HeroCarousel({ items, onPlay, onInfo }) {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isAnimating, setIsAnimating] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
-    const [detailsCache, setDetailsCache] = useState({});
     const pauseMode = localStorage.getItem('settings_carouselPauseMode') || 'anywhere';
 
     // Reset index when items change
@@ -17,22 +17,17 @@ export default function HeroCarousel({ items, onPlay, onInfo }) {
         setCurrentIndex(0);
     }, [items]);
 
-    // Fetch details for ALL items (for smooth transitions)
-    useEffect(() => {
-        if (!items || items.length === 0) return;
-
-        async function fetchAllDetails() {
-            const cache = {};
-            await Promise.all(items.map(async (item) => {
-                try {
-                    const res = await axios.get(`${BACKEND_URL}/api/details/${item.media_type}/${item.id}`);
-                    cache[item.id] = res.data;
-                } catch (err) { console.error(err); }
-            }));
-            setDetailsCache(cache);
-        }
-        fetchAllDetails();
-    }, [items]);
+    // Fetch details for ALL items using React Query
+    const detailsQueries = useQueries({
+        queries: (items || []).map(item => ({
+            queryKey: ['details', item.media_type, item.id],
+            queryFn: async () => {
+                const res = await axios.get(`${BACKEND_URL}/api/details/${item.media_type}/${item.id}`);
+                return res.data;
+            },
+            staleTime: 1000 * 60 * 60, // 1 hour
+        }))
+    });
 
     const handleNext = (e) => {
         if (e) e.stopPropagation();
@@ -96,7 +91,7 @@ export default function HeroCarousel({ items, onPlay, onInfo }) {
                 <div className="relative w-full">
                     {items.map((item, idx) => {
                         const isActive = idx === currentIndex;
-                        const details = detailsCache[item.id];
+                        const details = detailsQueries[idx]?.data;
 
                         // Metadata Logic
                         const title = item.title || item.name;
