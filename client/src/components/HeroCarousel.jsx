@@ -10,6 +10,7 @@ export default function HeroCarousel({ items, onPlay, onInfo }) {
     const [isAnimating, setIsAnimating] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
     const [detailsCache, setDetailsCache] = useState({});
+    const pauseMode = localStorage.getItem('settings_carouselPauseMode') || 'anywhere';
 
     // Reset index when items change
     useEffect(() => {
@@ -63,8 +64,8 @@ export default function HeroCarousel({ items, onPlay, onInfo }) {
     return (
         <header
             className="relative w-full h-[65vh] group overflow-hidden shrink-0 cursor-pointer"
-            onMouseEnter={() => setIsPaused(true)}
-            onMouseLeave={() => setIsPaused(false)}
+            onMouseEnter={() => pauseMode === 'anywhere' && setIsPaused(true)}
+            onMouseLeave={() => pauseMode === 'anywhere' && setIsPaused(false)}
             onClick={() => onInfo && onInfo(items[currentIndex])}
         >
             <style>{`
@@ -74,9 +75,6 @@ export default function HeroCarousel({ items, onPlay, onInfo }) {
                 }
                 .progress-bar {
                     animation: carousel-progress 6s linear;
-                }
-                .group:hover .progress-bar {
-                    animation-play-state: paused;
                 }
             `}</style>
             {/* Background Image & Gradients */}
@@ -143,7 +141,10 @@ export default function HeroCarousel({ items, onPlay, onInfo }) {
                                     </div>
                                 </div>
 
-                                <div className="flex items-center gap-6">
+                                <div className="flex items-center gap-6"
+                                    onMouseEnter={() => pauseMode === 'buttons' && setIsPaused(true)}
+                                    onMouseLeave={() => pauseMode === 'buttons' && setIsPaused(false)}
+                                >
                                     <div className="flex gap-4">
                                         <button
                                             onClick={(e) => {
@@ -194,6 +195,7 @@ export default function HeroCarousel({ items, onPlay, onInfo }) {
                             {idx === currentIndex && (
                                 <div
                                     className="absolute inset-0 bg-[#E50914] progress-bar"
+                                    style={{ animationPlayState: isPaused ? 'paused' : 'running' }}
                                 />
                             )}
                         </div>

@@ -114,9 +114,10 @@ export default function Player({ url, poster, title, episodeTitle, episodeNumber
             if (!art) return;
 
             const seekDuration = Number(localStorage.getItem('settings_seekDuration')) || 10;
+            const superSeekDuration = Number(localStorage.getItem('settings_superSeekDuration')) || 60;
 
-            const showSeekFeedback = (type) => {
-                setSeekOverlay({ type, text: `${seekDuration}s` });
+            const showSeekFeedback = (type, duration) => {
+                setSeekOverlay({ type, text: `${duration}s` });
                 if (seekTimeout.current) clearTimeout(seekTimeout.current);
                 seekTimeout.current = setTimeout(() => {
                     setSeekOverlay(null);
@@ -132,13 +133,15 @@ export default function Player({ url, poster, title, episodeTitle, episodeNumber
                     break;
                 case 'ArrowRight':
                     e.preventDefault();
-                    art.seek = art.currentTime + seekDuration;
-                    showSeekFeedback('forward');
+                    const forwardDuration = (e.ctrlKey || e.altKey) ? superSeekDuration : seekDuration;
+                    art.seek = art.currentTime + forwardDuration;
+                    showSeekFeedback('forward', forwardDuration);
                     break;
                 case 'ArrowLeft':
                     e.preventDefault();
-                    art.seek = art.currentTime - seekDuration;
-                    showSeekFeedback('backward');
+                    const backwardDuration = (e.ctrlKey || e.altKey) ? superSeekDuration : seekDuration;
+                    art.seek = art.currentTime - backwardDuration;
+                    showSeekFeedback('backward', backwardDuration);
                     break;
                 case 'ArrowUp':
                     e.preventDefault();

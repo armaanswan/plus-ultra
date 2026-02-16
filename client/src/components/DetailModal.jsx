@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { X, Play, Plus, Eye, Download, ArrowLeft, ArrowDownNarrowWide, Star, Calendar, Clock } from 'lucide-react';
 import MediaCard from './MediaCard';
+import DownloadModal from './DownloadModal';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 const TMDB_POSTER_BASE = 'https://image.tmdb.org/t/p/w500';
@@ -47,7 +48,10 @@ export default function DetailModal({ item, onClose, onPlay }) {
     const [seasonData, setSeasonData] = useState(null);
     const [selectedSeason, setSelectedSeason] = useState(1);
     const [isClosing, setIsClosing] = useState(false);
+    const [showDownloadModal, setShowDownloadModal] = useState(false);
+    const [downloadEpisodes, setDownloadEpisodes] = useState([]);
     const scrollContainerRef = useRef(null);
+    const showSingleSeason = localStorage.getItem('settings_showSingleSeason') !== 'false';
 
     // Disable Body Scroll
     useEffect(() => {
@@ -197,6 +201,44 @@ export default function DetailModal({ item, onClose, onPlay }) {
         setSeasonData(null);
     };
 
+    const handleDownload = async (episodesToDownload, options = {}) => {
+        const downloadPath = localStorage.getItem('settings_downloadPath');
+        if (!downloadPath) {
+            alert("Please set a download folder in Settings first!");
+            return;
+        }
+
+        for (const ep of episodesToDownload) {
+            try {
+                const payload = {
+                    title: details.title || details.name || currentItem.title,
+                    releaseYear: (details.release_date || details.first_air_date || '').split('-')[0],
+                    type: currentItem.media_type || 'tv',
+                    episodeNumber: ep.episode_number || ep.number || 1,
+                    audio: options.audio || localStorage.getItem('settings_downloadAudio') || 'dub',
+                    quality: options.quality || localStorage.getItem('settings_downloadQuality') || '1080p'
+                };
+
+                const res = await axios.post(`${BACKEND_URL}/api/resolve`, payload);
+
+                if (res.data.streamUrl) {
+                    const filename = `${payload.title} - S${String(selectedSeason).padStart(2, '0')}E${String(payload.episodeNumber).padStart(2, '0')}.mp4`;
+                    await axios.get(`${BACKEND_URL}/download`, {
+                        params: {
+                            url: res.data.streamUrl,
+                            referer: res.data.referer,
+                            filename: filename,
+                            downloadPath: downloadPath
+                        }
+                    });
+                }
+            } catch (err) {
+                console.error("Download failed for ep", ep, err);
+            }
+        }
+        alert("Downloads started in background!");
+    };
+
     if (!currentItem) return null;
 
     const title = details?.title || details?.name || currentItem.title || currentItem.name;
@@ -208,9 +250,17 @@ export default function DetailModal({ item, onClose, onPlay }) {
     const genres = details?.genres || [];
     const keywords = details?.keywords?.keywords || details?.keywords?.results || [];
     const cast = details?.credits?.cast?.slice(0, 10) || [];
-    const recommendations = (details?.recommendations?.results?.length > 0
+
+    const isAnimeContent = details?.original_language === 'ja' && genres.some(g => g.name === 'Animation');
+    let rawRecommendations = (details?.recommendations?.results?.length > 0
         ? details.recommendations.results
-        : details?.similar?.results)?.slice(0, 10).map(rec => ({ ...rec, media_type: rec.media_type || currentItem.media_type || (currentItem.title ? 'movie' : 'tv') })) || [];
+        : details?.similar?.results) || [];
+
+    if (isAnimeContent) {
+        rawRecommendations = rawRecommendations.filter(rec => rec.original_language === 'ja' && rec.genre_ids?.includes(16));
+    }
+    const recommendations = rawRecommendations.slice(0, 20).map(rec => ({ ...rec, media_type: rec.media_type || currentItem.media_type || (currentItem.title ? 'movie' : 'tv') }));
+
     const isTV = (currentItem.media_type === 'tv' || details?.seasons);
     const certification = isTV
         ? details?.content_ratings?.results?.find(r => r.iso_3166_1 === 'US')?.rating
@@ -302,10 +352,27 @@ export default function DetailModal({ item, onClose, onPlay }) {
                                 {[
                                     { icon: Plus, label: 'Add to Watchlist' },
                                     { icon: Eye, label: 'Mark as Watched' },
-                                    { icon: Download, label: 'Download' }
+                                    {
+                                        icon: Download,
+                                        label: 'Download',
+                                        onClick: () => {
+                                            const eps = animeData?.episodes || seasonData?.episodes || [];
+                                            if (eps.length > 0) {
+                                                setDownloadEpisodes(eps);
+                                                setShowDownloadModal(true);
+                                            } else if (!isTV) {
+                                                // Movie
+                                                setDownloadEpisodes([{ id: currentItem.id, title: title, number: 1 }]);
+                                                setShowDownloadModal(true);
+                                            }
+                                        }
+                                    }
                                 ].map((btn, idx) => (
                                     <div key={idx} className="relative group">
-                                        <button className="w-12 h-12 bg-white/10 backdrop-blur-md border border-white/20 rounded-lg flex items-center justify-center hover:bg-white/20 transition-all text-white cursor-pointer">
+                                        <button
+                                            onClick={btn.onClick}
+                                            className="w-12 h-12 bg-white/10 backdrop-blur-md border border-white/20 rounded-lg flex items-center justify-center hover:bg-white/20 transition-all text-white cursor-pointer"
+                                        >
                                             <btn.icon className="w-6 h-6 group-hover:scale-110 transition-transform" />
                                         </button>
                                         <span className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-black/90 border border-white/20 rounded-md text-xs text-white z-50 shadow-xl backdrop-blur-sm whitespace-nowrap pointer-events-none transition-opacity duration-300">
@@ -356,39 +423,40 @@ export default function DetailModal({ item, onClose, onPlay }) {
                             {/* TV SEASONS SECTION */}
                             {isTV && (animeData ? (
                                 <div className="flex-1 flex flex-col">
-                                    <h3 className="text-sm font-bold text-textMuted uppercase tracking-wider mb-4">Seasons</h3>
-
                                     {/* Anime Season Selector */}
-                                    {animeSeasons.length > 0 && (
-                                        <div className="flex overflow-x-auto pb-4 mb-8 px-1 items-start">
-                                            {animeSeasons.map((season, idx) => {
-                                                const isSelected = currentAnimeId === season.id;
+                                    {animeSeasons.length > 0 && (showSingleSeason || animeSeasons.length > 1) && (
+                                        <>
+                                            <h3 className="text-sm font-bold text-textMuted uppercase tracking-wider mb-4">Seasons</h3>
+                                            <div className="flex overflow-x-auto pb-4 mb-8 px-1 items-start">
+                                                {animeSeasons.map((season, idx) => {
+                                                    const isSelected = currentAnimeId === season.id;
 
-                                                return (
-                                                    <button
-                                                        key={season.id}
-                                                        onClick={() => fetchAnimeSeason(season.id)}
-                                                        title={season.title}
-                                                        className={`flex-shrink-0 w-44 p-3 flex flex-col gap-3 group text-left cursor-pointer relative rounded-xl transition-all ${isSelected ? 'bg-primary/10' : 'hover:bg-surfaceHighlight'}`}
-                                                    >
-                                                        <div className={`w-full aspect-[2/3] rounded-lg overflow-hidden border-2 relative transition-all ${isSelected
-                                                            ? 'border-primary scale-105'
-                                                            : 'border-transparent'
-                                                            }`}>
-                                                            <img src={season.image} alt={season.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                                        </div>
-                                                        <div className="flex flex-col px-1 gap-1.5">
-                                                            <h4 className={`text-sm font-bold truncate leading-tight transition-colors ${isSelected ? 'text-textMain' : 'text-textMain group-hover:text-primary'}`}>{season.title}</h4>
-                                                            <div className={`flex items-center gap-2 text-xs font-medium transition-colors ${isSelected ? 'text-textMuted' : 'text-textMuted group-hover:text-primary'}`}>
-                                                                <span>{season.type || 'TV'}</span>
-                                                                <span>•</span>
-                                                                <span>{String(season.releaseDate || "").match(/\d{4}/)?.[0] || '????'}</span>
+                                                    return (
+                                                        <button
+                                                            key={season.id}
+                                                            onClick={() => fetchAnimeSeason(season.id)}
+                                                            title={season.title}
+                                                            className={`flex-shrink-0 w-44 p-3 flex flex-col gap-3 group text-left cursor-pointer relative rounded-xl transition-all ${isSelected ? 'bg-primary/10' : 'hover:bg-surfaceHighlight'}`}
+                                                        >
+                                                            <div className={`w-full aspect-[2/3] rounded-lg overflow-hidden border-2 relative transition-all ${isSelected
+                                                                ? 'border-primary scale-105'
+                                                                : 'border-transparent'
+                                                                }`}>
+                                                                <img src={season.image} alt={season.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                                             </div>
-                                                        </div>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
+                                                            <div className="flex flex-col px-1 gap-1.5">
+                                                                <h4 className={`text-sm font-bold truncate leading-tight transition-colors ${isSelected ? 'text-textMain' : 'text-textMain group-hover:text-primary'}`}>{season.title}</h4>
+                                                                <div className={`flex items-center gap-2 text-xs font-medium transition-colors ${isSelected ? 'text-textMuted' : 'text-textMuted group-hover:text-primary'}`}>
+                                                                    <span>{season.type || 'TV'}</span>
+                                                                    <span>•</span>
+                                                                    <span>{String(season.releaseDate || "").match(/\d{4}/)?.[0] || '????'}</span>
+                                                                </div>
+                                                            </div>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </>
                                     )}
 
                                     <h3 className="text-lg font-bold text-textMain normal-case tracking-tight mb-4">
@@ -452,6 +520,19 @@ export default function DetailModal({ item, onClose, onPlay }) {
                                                             </div>
                                                         )}
                                                     </div>
+                                                    <div className="flex items-center gap-1">
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setDownloadEpisodes([ep]);
+                                                                setShowDownloadModal(true);
+                                                            }}
+                                                            className="p-2.5 rounded-full hover:bg-surfaceHighlight text-textMuted hover:text-textMain transition-colors"
+                                                            title="Download"
+                                                        >
+                                                            <Download className="w-5 h-5" />
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
@@ -459,21 +540,25 @@ export default function DetailModal({ item, onClose, onPlay }) {
                                 </div>
                             ) : details?.seasons && (
                                 <div className="flex-1 flex flex-col">
-                                    <h3 className="text-sm font-bold text-textMuted uppercase tracking-wider mb-3">Seasons</h3>
-                                    <div className="flex gap-3 overflow-x-auto pb-2 mb-6">
-                                        {details.seasons.filter(s => s.season_number > 0).map(season => (
-                                            <button
-                                                key={season.id}
-                                                onClick={() => fetchSeason(currentItem.id, season.season_number)}
-                                                className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${selectedSeason === season.season_number
-                                                    ? 'bg-primary text-white'
-                                                    : 'bg-surfaceHighlight text-textMuted hover:text-textMain'
-                                                    }`}
-                                            >
-                                                {season.name}
-                                            </button>
-                                        ))}
-                                    </div>
+                                    {(showSingleSeason || details.seasons.filter(s => s.season_number > 0).length > 1) && (
+                                        <>
+                                            <h3 className="text-sm font-bold text-textMuted uppercase tracking-wider mb-3">Seasons</h3>
+                                            <div className="flex gap-3 overflow-x-auto pb-2 mb-6">
+                                                {details.seasons.filter(s => s.season_number > 0).map(season => (
+                                                    <button
+                                                        key={season.id}
+                                                        onClick={() => fetchSeason(currentItem.id, season.season_number)}
+                                                        className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${selectedSeason === season.season_number
+                                                            ? 'bg-primary text-white'
+                                                            : 'bg-surfaceHighlight text-textMuted hover:text-textMain'
+                                                            }`}
+                                                    >
+                                                        {season.name}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
 
                                     {/* EPISODE LIST */}
                                     <div className="bg-surface border border-border rounded-xl overflow-hidden flex flex-col min-h-[400px] max-h-[600px]">
@@ -539,6 +624,17 @@ export default function DetailModal({ item, onClose, onPlay }) {
                                                         </button>
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); }}
+                                                            className="p-2.5 rounded-full hover:bg-surfaceHighlight text-textMuted hover:text-textMain transition-colors"
+                                                            title="Download"
+                                                        >
+                                                            <Download className="w-5 h-5" />
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setDownloadEpisodes([ep]);
+                                                                setShowDownloadModal(true);
+                                                            }}
                                                             className="p-2.5 rounded-full hover:bg-surfaceHighlight text-textMuted hover:text-textMain transition-colors"
                                                             title="Download"
                                                         >
@@ -630,6 +726,16 @@ export default function DetailModal({ item, onClose, onPlay }) {
                     )}
                 </div>
             </div>
+
+            {/* DOWNLOAD MODAL */}
+            {showDownloadModal && (
+                <DownloadModal
+                    item={details || currentItem}
+                    episodes={downloadEpisodes}
+                    onClose={() => setShowDownloadModal(false)}
+                    onDownload={(eps, options) => handleDownload(eps, options)}
+                />
+            )}
         </div>
     );
 }
