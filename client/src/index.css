@@ -1,1 +1,74 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&display=swap');
 @import "tailwindcss";
+
+@theme {
+    --font-sans: "Manrope", "Inter", sans-serif;
+
+    --color-background: var(--background);
+    --color-surface: var(--surface);
+    --color-surface-highlight: var(--surface-highlight);
+    --color-border: var(--border);
+    --color-text-main: var(--text-main);
+    --color-text-muted: var(--text-muted);
+    --color-primary: var(--primary);
+}
+
+:root {
+    /* LIGHT MODE (Default) */
+    --background: #f4f4f5;
+    --surface: #ffffff;
+    --surface-highlight: #f4f4f5;
+    /* Zinc-100 */
+    --border: #e4e4e7;
+    /* Zinc-200 */
+    --text-main: #09090b;
+    /* Zinc-950 */
+    --text-muted: #71717a;
+    /* Zinc-500 */
+    --primary: #E50914;
+    /* Netflix Red */
+}
+
+.dark {
+    /* DARK MODE */
+    --background: #121212;
+    --surface: #1e1e1e;
+    /* Zinc-950 */
+    --surface-highlight: #27272a;
+    /* Zinc-900 */
+    --border: #3f3f46;
+    /* Zinc-800 */
+    --text-main: #e5e5e5;
+    --text-muted: #a1a1aa;
+    /* Zinc-400 */
+    --primary: #E50914;
+}
+
+body {
+    background-color: var(--background);
+    color: var(--text-main);
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Smooth transitions for all theme-aware elements */
+*,
+*::before,
+*::after {
+    border-color: var(--border);
+}
+
+/* Custom Scrollbar for Webkit */
+::-webkit-scrollbar {
+    display: none;
+}
+
+/* Navbar Active State - High Contrast */
+.nav-active {
+    border-color: #000000;
+    color: #000000;
+}
+
+.dark .nav-active {
+    border-color: #ffffff;
+    color: #ffffff;
+}
