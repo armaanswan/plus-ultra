@@ -6,6 +6,7 @@ import MediaCard from './MediaCard';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 const TMDB_POSTER_BASE = 'https://image.tmdb.org/t/p/w500';
 const BACKEND_URL = 'http://localhost:3001';
+const CONSUMET_URL = 'http://localhost:3000';
 
 const CERTIFICATIONS = {
     'G': 'General Audiences',
@@ -23,11 +24,26 @@ const CERTIFICATIONS = {
     'Unrated': 'Not Rated'
 };
 
+function formatDuration(time) {
+    if (!time) return '';
+    const parts = time.split(':');
+    if (parts.length === 3) {
+        const h = parseInt(parts[0]);
+        const m = parseInt(parts[1]);
+        if (h > 0) return `${h} hr ${m} mins`;
+        return `${m} mins`;
+    }
+    return time;
+}
+
 export default function DetailModal({ item, onClose, onPlay }) {
     const [currentItem, setCurrentItem] = useState(item);
     const [history, setHistory] = useState([]);
     const [details, setDetails] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [animeData, setAnimeData] = useState(null);
+    const [animeSeasons, setAnimeSeasons] = useState([]);
+    const [currentAnimeId, setCurrentAnimeId] = useState(null);
     const [seasonData, setSeasonData] = useState(null);
     const [selectedSeason, setSelectedSeason] = useState(1);
     const [isClosing, setIsClosing] = useState(false);
@@ -45,6 +61,9 @@ export default function DetailModal({ item, onClose, onPlay }) {
     useEffect(() => {
         async function fetchDetails() {
             setLoading(true);
+            setAnimeData(null);
+            setAnimeSeasons([]);
+            setCurrentAnimeId(null);
             try {
                 const type = currentItem.media_type || (currentItem.title ? 'movie' : 'tv');
                 const res = await axios.get(`${BACKEND_URL}/api/details/${type}/${currentItem.id}`);
@@ -76,12 +95,67 @@ export default function DetailModal({ item, onClose, onPlay }) {
         fetchDetails();
     }, [currentItem]);
 
+    // Fetch Anime Data from Scraper
+    useEffect(() => {
+        if (!details) return;
+
+        const title = details.title || details.name || currentItem.title || currentItem.name;
+        const isAnime = details.original_language === 'ja' &&
+            details.genres?.some(g => g.name === 'Animation') &&
+            (currentItem.media_type === 'tv' || details.number_of_seasons);
+
+        if (isAnime && title) {
+            async function fetchAnime() {
+                try {
+                    const searchRes = await axios.get(`${CONSUMET_URL}/anime/animepahe/${encodeURIComponent(title)}`);
+                    if (searchRes.data.results?.length > 0) {
+                        // Filter results to ensure relevance (simple inclusion check)
+                        let validSeasons = searchRes.data.results.filter(r =>
+                            r.title.toLowerCase().includes(title.toLowerCase())
+                        );
+                        // Fallback if filter is too strict (e.g. language mismatch)
+                        if (validSeasons.length === 0) validSeasons = searchRes.data.results;
+
+                        // Sort by release year
+                        validSeasons.sort((a, b) => {
+                            const yearA = parseInt(String(a.releaseDate || "").match(/\d{4}/)?.[0] || "0");
+                            const yearB = parseInt(String(b.releaseDate || "").match(/\d{4}/)?.[0] || "0");
+                            return yearA - yearB;
+                        });
+                        setAnimeSeasons(validSeasons);
+
+                        const match = validSeasons.find(r => r.title.toLowerCase() === title.toLowerCase()) || validSeasons[0];
+                        if (match) {
+                            setCurrentAnimeId(match.id);
+                            const infoRes = await axios.get(`${CONSUMET_URL}/anime/animepahe/info/${match.id}`);
+                            setAnimeData(infoRes.data);
+                        }
+                    }
+                } catch (err) {
+                    console.error("Failed to fetch anime data", err);
+                }
+            }
+            fetchAnime();
+        }
+    }, [details, currentItem]);
+
     // Scroll to top when item changes
     useEffect(() => {
         if (scrollContainerRef.current) {
             scrollContainerRef.current.scrollTop = 0;
         }
     }, [currentItem]);
+
+    // Fetch Specific Anime Season (Switching tabs)
+    async function fetchAnimeSeason(animeId) {
+        try {
+            setCurrentAnimeId(animeId);
+            const infoRes = await axios.get(`${CONSUMET_URL}/anime/animepahe/info/${animeId}`);
+            setAnimeData(infoRes.data);
+        } catch (err) {
+            console.error("Failed to fetch anime season", err);
+        }
+    }
 
     // Fetch Season Details
     async function fetchSeason(tvId, seasonNum) {
@@ -104,6 +178,9 @@ export default function DetailModal({ item, onClose, onPlay }) {
         setHistory([...history, currentItem]);
         setCurrentItem(newItem);
         setDetails(null);
+        setAnimeData(null);
+        setAnimeSeasons([]);
+        setCurrentAnimeId(null);
         setSeasonData(null);
     };
 
@@ -113,6 +190,10 @@ export default function DetailModal({ item, onClose, onPlay }) {
         setHistory(history.slice(0, -1));
         setCurrentItem(prevItem);
         setDetails(null);
+        setAnimeData(null);
+        setAnimeSeasons([]);
+        setCurrentAnimeId(null);
+        setAnimeData(null);
         setSeasonData(null);
     };
 
@@ -188,7 +269,18 @@ export default function DetailModal({ item, onClose, onPlay }) {
                             <div className="flex flex-wrap items-center gap-4">
                                 <button
                                     onClick={() => {
-                                        if (isTV && seasonData?.episodes?.length > 0) {
+                                        if (animeData?.episodes?.length > 0) {
+                                            const firstEp = animeData.episodes[0];
+                                            onPlay({
+                                                ...currentItem,
+                                                title: animeData.title, // Use scraper title (e.g. "Show Season 2")
+                                                episodeNumber: firstEp.number,
+                                                seasonNumber: 1,
+                                                episodeId: firstEp.id,
+                                                episodeTitle: firstEp.title || `Episode ${firstEp.number}`,
+                                                image: firstEp.image
+                                            });
+                                        } else if (isTV && seasonData?.episodes?.length > 0) {
                                             const firstEp = seasonData.episodes[0];
                                             onPlay({
                                                 ...currentItem,
@@ -262,7 +354,110 @@ export default function DetailModal({ item, onClose, onPlay }) {
                             </div>
 
                             {/* TV SEASONS SECTION */}
-                            {isTV && details?.seasons && (
+                            {isTV && (animeData ? (
+                                <div className="flex-1 flex flex-col">
+                                    <h3 className="text-sm font-bold text-textMuted uppercase tracking-wider mb-4">Seasons</h3>
+
+                                    {/* Anime Season Selector */}
+                                    {animeSeasons.length > 0 && (
+                                        <div className="flex overflow-x-auto pb-4 mb-8 px-1 items-start">
+                                            {animeSeasons.map((season, idx) => {
+                                                const isSelected = currentAnimeId === season.id;
+
+                                                return (
+                                                    <button
+                                                        key={season.id}
+                                                        onClick={() => fetchAnimeSeason(season.id)}
+                                                        title={season.title}
+                                                        className={`flex-shrink-0 w-44 p-3 flex flex-col gap-3 group text-left cursor-pointer relative rounded-xl transition-all ${isSelected ? 'bg-primary/10' : 'hover:bg-surfaceHighlight'}`}
+                                                    >
+                                                        <div className={`w-full aspect-[2/3] rounded-lg overflow-hidden border-2 relative transition-all ${isSelected
+                                                            ? 'border-primary scale-105'
+                                                            : 'border-transparent'
+                                                            }`}>
+                                                            <img src={season.image} alt={season.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                                        </div>
+                                                        <div className="flex flex-col px-1 gap-1.5">
+                                                            <h4 className={`text-sm font-bold truncate leading-tight transition-colors ${isSelected ? 'text-textMain' : 'text-textMain group-hover:text-primary'}`}>{season.title}</h4>
+                                                            <div className={`flex items-center gap-2 text-xs font-medium transition-colors ${isSelected ? 'text-textMuted' : 'text-textMuted group-hover:text-primary'}`}>
+                                                                <span>{season.type || 'TV'}</span>
+                                                                <span>•</span>
+                                                                <span>{String(season.releaseDate || "").match(/\d{4}/)?.[0] || '????'}</span>
+                                                            </div>
+                                                        </div>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
+                                    <h3 className="text-lg font-bold text-textMain normal-case tracking-tight mb-4">
+                                        {(animeData.type === 'Movie' || animeSeasons.find(s => s.id === currentAnimeId)?.type === 'Movie') ? 'Movie' : 'Episodes'} <span className="text-textMain normal-case ml-1">- {animeData.title} ({String(animeData.releaseDate || "").match(/\d{4}/)?.[0] || ''})</span>
+                                    </h3>
+                                    <div className="bg-surface border border-border rounded-xl overflow-hidden flex flex-col max-h-[600px]">
+                                        <style>{`
+                                            .custom-scrollbar::-webkit-scrollbar {
+                                                display: block;
+                                                width: 6px;
+                                            }
+                                            .custom-scrollbar::-webkit-scrollbar-track {
+                                                background: transparent;
+                                            }
+                                            .custom-scrollbar::-webkit-scrollbar-thumb {
+                                                background-color: rgba(156, 163, 175, 0.5);
+                                                border-radius: 3px;
+                                            }
+                                            .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                                                background-color: rgba(156, 163, 175, 0.8);
+                                            }
+                                        `}</style>
+                                        <div className="overflow-y-auto custom-scrollbar flex-1">
+                                            {animeData.episodes?.map((ep, idx) => (
+                                                <div
+                                                    key={ep.id}
+                                                    onClick={() => onPlay({
+                                                        ...currentItem,
+                                                        title: animeData.title, // Use scraper title
+                                                        episodeNumber: ep.number,
+                                                        seasonNumber: 1,
+                                                        episodeId: ep.id,
+                                                        episodeTitle: ep.title || `Episode ${ep.number}`,
+                                                        image: ep.image
+                                                    })}
+                                                    className={`flex gap-4 p-3 items-center transition-colors cursor-pointer group border-b border-border last:border-b-0 ${idx % 2 === 0 ? 'bg-surface' : 'bg-surfaceHighlight'} hover:bg-primary/10`}
+                                                >
+                                                    <div className="w-8 shrink-0 text-center">
+                                                        <span className="font-mono text-base font-bold text-textMuted/40 group-hover:text-textMain transition-colors">
+                                                            {ep.number}
+                                                        </span>
+                                                    </div>
+                                                    <div className="w-32 aspect-video rounded-lg overflow-hidden bg-black/20 shrink-0 relative">
+                                                        {ep.image ? (
+                                                            <img src={ep.image} alt={ep.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                                        ) : (
+                                                            <div className="w-full h-full flex items-center justify-center text-textMuted"><Play className="w-6 h-6" /></div>
+                                                        )}
+                                                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
+                                                            <Play className="w-8 h-8 text-white fill-current" />
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex-1 flex flex-col justify-center">
+                                                        <h4 className="font-bold text-textMain group-hover:text-primary transition-colors">
+                                                            {ep.title || ((animeSeasons.find(s => s.id === currentAnimeId)?.type === 'Movie' || animeData.type === 'Movie') ? animeData.title : `Episode ${ep.number}`)}
+                                                        </h4>
+                                                        {ep.duration && (
+                                                            <div className="flex items-center gap-1.5 mt-2 px-2 py-1 rounded border border-border w-fit">
+                                                                <Clock className="w-3 h-3 text-textMuted" />
+                                                                <span className="text-xs font-medium text-textMuted">{formatDuration(ep.duration)}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : details?.seasons && (
                                 <div className="flex-1 flex flex-col">
                                     <h3 className="text-sm font-bold text-textMuted uppercase tracking-wider mb-3">Seasons</h3>
                                     <div className="flex gap-3 overflow-x-auto pb-2 mb-6">
@@ -355,7 +550,7 @@ export default function DetailModal({ item, onClose, onPlay }) {
                                         </div>
                                     </div>
                                 </div>
-                            )}
+                            ))}
                         </div>
 
                         {/* RIGHT COLUMN (Info, Cast) */}
@@ -404,7 +599,7 @@ export default function DetailModal({ item, onClose, onPlay }) {
                                 <div className="flex flex-wrap gap-4 items-center">
                                     {details?.production_companies?.map(co => (
                                         co.logo_path && (
-                                            <div key={co.id} className="bg-white p-2 rounded-lg h-12 flex items-center justify-center shadow-sm">
+                                            <div key={co.id} className="bg-white p-2 rounded-lg h-12 flex items-center justify-center shadow-sm cursor-pointer hover:scale-105 transition-transform">
                                                 <img
                                                     src={`${TMDB_POSTER_BASE}${co.logo_path}`}
                                                     alt={co.name}

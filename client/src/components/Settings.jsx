@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { X, Monitor, Play, Download, Moon, Sun, Laptop, Folder, Check, Globe, Captions } from 'lucide-react';
 
-export default function Settings({ onClose, theme, setTheme, defaultPage, setDefaultPage }) {
-    const [activeTab, setActiveTab] = useState('general');
+export default function Settings({ onClose, theme, setTheme, defaultPage, setDefaultPage, initialTab }) {
+    const [activeTab, setActiveTab] = useState(initialTab || 'general');
 
     // Persistent Settings State
     const [seekDuration, setSeekDuration] = useState(() => Number(localStorage.getItem('settings_seekDuration')) || 10);
@@ -42,7 +42,7 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
 
     return (
         <div
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 animate-in fade-in duration-200"
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 animate-in fade-in duration-200"
             onClick={onClose}
         >
             <div

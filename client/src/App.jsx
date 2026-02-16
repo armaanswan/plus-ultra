@@ -22,6 +22,7 @@ export default function App() {
   const [defaultPage, setDefaultPage] = useState(() => localStorage.getItem('defaultPage') || 'home');
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('defaultPage') || 'home');
   const dataCache = useRef({}); // Cache for tab data
+  const streamCache = useRef({}); // Cache for stream URLs
   const [showSettings, setShowSettings] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'system');
   const [selectedMedia, setSelectedMedia] = useState(null); // For DetailModal
@@ -139,7 +140,7 @@ export default function App() {
   };
 
   // 7. Handle Play Start (from Modal or Carousel)
-  const startPlayback = async (media) => {
+  const startPlayback = async (media, options = {}) => {
     // Extract metadata
     const title = media.title || media.name;
     const date = media.release_date || media.first_air_date;
@@ -152,6 +153,30 @@ export default function App() {
     const episodeTitle = media.episodeTitle || '';
     const totalEpisodes = media.episodes?.length || 0;
 
+    // Get preferences from LocalStorage (defaults: Dub, 1080p)
+    const audioPref = options.audio || localStorage.getItem('settings_audioLang') || 'dub';
+    const qualityPref = options.quality || localStorage.getItem('settings_streamQuality') || '1080p';
+
+    // Check Cache (1 Hour Expiry)
+    const cacheKey = `${title}-${seasonNumber}-${episodeNumber}-${audioPref}-${qualityPref}`;
+    const cached = streamCache.current[cacheKey];
+    if (cached && (Date.now() - cached.timestamp < 60 * 60 * 1000)) {
+      setStreamData({
+        url: cached.url,
+        poster: `${TMDB_IMAGE_BASE}${media.backdrop_path || media.poster_path}`,
+        title,
+        type,
+        episodeNumber,
+        totalEpisodes,
+        seasonNumber,
+        episodeTitle,
+        media,
+        audio: audioPref,
+        quality: qualityPref
+      });
+      return;
+    }
+
     // 1. Show Player Immediately (Loading State)
     setStreamData({
       url: null, // Indicates loading
@@ -162,14 +187,12 @@ export default function App() {
       totalEpisodes,
       seasonNumber,
       episodeTitle,
-      media // Store original media for navigation context
+      media, // Store original media for navigation context
+      audio: audioPref,
+      quality: qualityPref
     });
 
     try {
-      // Get preferences from LocalStorage (defaults: Dub, 1080p)
-      const audioPref = localStorage.getItem('settings_audioLang') || 'dub';
-      const qualityPref = localStorage.getItem('settings_streamQuality') || '1080p';
-
       const payload = {
         title,
         releaseYear,
@@ -182,6 +205,8 @@ export default function App() {
       const res = await axios.post(`${BACKEND_URL}/api/resolve`, payload);
 
       if (res.data.streamUrl) {
+        // Cache the result
+        streamCache.current[cacheKey] = { url: res.data.streamUrl, timestamp: Date.now() };
         // 2. Update Player with Stream URL
         setStreamData(prev => ({ ...prev, url: res.data.streamUrl }));
       } else {
@@ -254,6 +279,7 @@ export default function App() {
           setTheme={setTheme}
           defaultPage={defaultPage}
           setDefaultPage={setDefaultPage}
+          initialTab={streamData ? 'player' : 'general'}
         />
       )}
 
@@ -271,6 +297,9 @@ export default function App() {
         <Player
           {...streamData}
           onClose={() => setStreamData(null)}
+          currentAudio={streamData.audio}
+          currentQuality={streamData.quality}
+          onUpdateStream={(newOptions) => startPlayback(streamData.media, { ...streamData, ...newOptions })}
           onNext={() => {
             const nextEpNum = streamData.episodeNumber + 1;
             const nextEp = streamData.media.episodes?.find(e => e.episode_number === nextEpNum);

@@ -3,7 +3,7 @@ import Artplayer from 'artplayer';
 import Hls from 'hls.js';
 import { ArrowLeft, ChevronLeft, ChevronRight, FastForward, Rewind } from 'lucide-react';
 
-export default function Player({ url, poster, title, episodeTitle, episodeNumber, totalEpisodes, seasonNumber, type, onClose, onNext, onPrev }) {
+export default function Player({ url, poster, title, episodeTitle, episodeNumber, totalEpisodes, seasonNumber, type, onClose, onNext, onPrev, currentAudio, currentQuality, onUpdateStream }) {
     const artRef = useRef();
     const [showUI, setShowUI] = useState(true);
     const [isBuffering, setIsBuffering] = useState(true);
@@ -191,48 +191,93 @@ export default function Player({ url, poster, title, episodeTitle, episodeNumber
     }, [url]);
 
     return (
-        <div className="fixed inset-0 z-[100] bg-black">
+        <div className="fixed inset-0 z-[100] bg-black cursor-default">
             {/* Force hide Artplayer notice via CSS as a fallback */}
             <style>{`
                 .art-notice, .art-layer-notice, .art-layer-auto-playback, .art-layer-loading, .art-loading { display: none !important; opacity: 0 !important; visibility: hidden !important; }
             `}</style>
-            {/* Metadata Overlay (Top Center) */}
-            <div className={`absolute top-0 left-0 right-0 p-8 flex flex-col items-center justify-start z-[110] pointer-events-none bg-gradient-to-b from-black/80 to-transparent h-40 transition-opacity duration-500 ${showUI ? 'opacity-100' : 'opacity-0'}`}>
-                <h2 className="text-white font-bold text-2xl drop-shadow-md tracking-tight text-center">{title}</h2>
-                {type === 'tv' && (
-                    <p className="text-gray-300 text-lg font-medium drop-shadow-md mt-1">
-                        S{seasonNumber}E{episodeNumber}{episodeTitle ? `: ${episodeTitle}` : ''}
-                    </p>
-                )}
-            </div>
 
-            {/* Back Button */}
-            <button
-                onClick={onClose}
-                className={`absolute top-6 left-6 z-[120] w-12 h-12 bg-black/50 hover:bg-white/20 text-white rounded-full flex items-center justify-center backdrop-blur-md border border-white/10 transition-all cursor-pointer group ${showUI ? 'opacity-100' : 'opacity-0'}`}
-            >
-                <ArrowLeft className="w-6 h-6 group-hover:scale-110 transition-transform" />
-            </button>
-
-            {/* Next/Prev Buttons (Top Right) */}
-            {type === 'tv' && url && (
-                <div className={`absolute top-6 right-6 z-[120] flex items-center gap-2 transition-opacity duration-500 ${showUI ? 'opacity-100' : 'opacity-0'}`}>
+            {/* Top Bar UI */}
+            <div className={`absolute top-0 left-0 right-0 z-[120] flex items-center justify-between p-6 gap-4 bg-gradient-to-b from-black/70 to-transparent transition-opacity duration-500 pointer-events-none ${showUI ? 'opacity-100' : 'opacity-0'}`}>
+                {/* Left Side: Back Button & Title */}
+                <div className="flex items-center gap-4 pointer-events-auto">
                     <button
-                        onClick={onPrev}
-                        disabled={episodeNumber <= 1}
-                        className="p-3 rounded-full bg-black/50 hover:bg-white/20 text-white backdrop-blur-md border border-white/10 transition-all group disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                        title="Previous Episode (Shift+P)">
-                        <ChevronLeft className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                        onClick={onClose}
+                        className="w-11 h-11 bg-white/10 hover:bg-white/20 text-white rounded-full flex items-center justify-center backdrop-blur-md border border-white/10 transition-all cursor-pointer group shrink-0"
+                    >
+                        <ArrowLeft className="w-5 h-5 group-hover:scale-110 transition-transform" />
                     </button>
-                    <button
-                        onClick={onNext}
-                        disabled={totalEpisodes > 0 && episodeNumber >= totalEpisodes}
-                        className="p-3 rounded-full bg-black/50 hover:bg-white/20 text-white backdrop-blur-md border border-white/10 transition-all group disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                        title="Next Episode (Shift+N)">
-                        <ChevronRight className="w-6 h-6 group-hover:scale-110 transition-transform" />
-                    </button>
+                    <div className="flex flex-col">
+                        <h2 className="text-white font-bold text-xl drop-shadow-md tracking-tight line-clamp-1">{title}</h2>
+                        {type === 'tv' && (
+                            <p className="text-gray-300 text-sm font-medium drop-shadow-md">
+                                S{String(seasonNumber).padStart(2, '0')}E{String(episodeNumber).padStart(2, '0')}
+                                {episodeTitle && <span className="text-gray-400 ml-2">{episodeTitle}</span>}
+                            </p>
+                        )}
+                    </div>
                 </div>
-            )}
+
+                {/* Right Side: Controls */}
+                <div className="flex items-center gap-3 pointer-events-auto">
+                    {/* Stream Controls */}
+                    {onUpdateStream && (
+                        <div className="flex items-center gap-3">
+                            {/* Audio Toggle */}
+                            <div className="flex items-center bg-black/50 backdrop-blur-md rounded-lg p-1 border border-white/10">
+                                {['sub', 'dub'].map((mode) => (
+                                    <button
+                                        key={mode}
+                                        onClick={() => mode !== currentAudio && onUpdateStream({ audio: mode })}
+                                        className={`px-3 py-1 rounded-md text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${currentAudio === mode
+                                            ? 'bg-white text-black shadow-sm'
+                                            : 'text-white/60 hover:text-white hover:bg-white/10'
+                                            }`}
+                                    >
+                                        {mode}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* Quality Toggle */}
+                            <div className="flex items-center bg-black/50 backdrop-blur-md rounded-lg p-1 border border-white/10">
+                                {['1080p', '720p', '360p'].map((q) => (
+                                    <button
+                                        key={q}
+                                        onClick={() => q !== currentQuality && onUpdateStream({ quality: q })}
+                                        className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${currentQuality === q
+                                            ? 'bg-white text-black shadow-sm'
+                                            : 'text-white/60 hover:text-white hover:bg-white/10'
+                                            }`}
+                                    >
+                                        {q}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Episode Navigation */}
+                    {type === 'tv' && url && (
+                        <div className="flex items-center gap-2 border-l border-white/10 pl-3 ml-1">
+                            <button
+                                onClick={onPrev}
+                                disabled={episodeNumber <= 1}
+                                className="w-11 h-11 rounded-lg bg-black/50 hover:bg-white/20 text-white backdrop-blur-md border border-white/10 transition-all group disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center"
+                                title="Previous Episode (Shift+P)">
+                                <ChevronLeft className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                            </button>
+                            <button
+                                onClick={onNext}
+                                disabled={totalEpisodes > 0 && episodeNumber >= totalEpisodes}
+                                className="w-11 h-11 rounded-lg bg-black/50 hover:bg-white/20 text-white backdrop-blur-md border border-white/10 transition-all group disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center"
+                                title="Next Episode (Shift+N)">
+                                <ChevronRight className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </div>
 
             {/* Seek Overlay */}
             {seekOverlay && (
