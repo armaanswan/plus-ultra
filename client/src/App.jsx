@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { Navbar, MediaGrid, Player, LoadingOverlay, HeroCarousel, Settings, GenreList, DetailModal } from './components';
+import { SeasonListSkeleton } from './components/Skeleton';
 import SplashScreen from './components/SplashScreen';
 
 // CONFIG
@@ -14,10 +15,10 @@ const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 export default function App() {
   // const [loading, setLoading] = useState(false); // Replaced by React Query isLoading
   const [streamData, setStreamData] = useState(null); // { url, poster }
-  const [statusMsg, setStatusMsg] = useState('');
   const [defaultPage, setDefaultPage] = useState(() => localStorage.getItem('defaultPage') || 'home');
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('defaultPage') || 'home');
   const streamCache = useRef({}); // Cache for stream URLs
+  const currentPlaybackId = useRef(null);
   const [showSettings, setShowSettings] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'system');
   const [selectedMedia, setSelectedMedia] = useState(null); // For DetailModal
@@ -33,7 +34,7 @@ export default function App() {
       const res = await axios.get(`${BACKEND_URL}${endpoint}`);
       return res.data;
     },
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
     staleTime: 1000 * 60 * 10, // 10 mins
   });
 
@@ -118,6 +119,9 @@ export default function App() {
 
   // 7. Handle Play Start (from Modal or Carousel)
   const startPlayback = async (media, options = {}) => {
+    const playbackId = Date.now();
+    currentPlaybackId.current = playbackId;
+
     // Extract metadata
     const title = media.title || media.name;
     const date = media.release_date || media.first_air_date;
@@ -181,6 +185,8 @@ export default function App() {
 
       const res = await axios.post(`${BACKEND_URL}/api/resolve`, payload);
 
+      if (currentPlaybackId.current !== playbackId) return;
+
       if (res.data.streamUrl) {
         // Cache the result
         streamCache.current[cacheKey] = { url: res.data.streamUrl, timestamp: Date.now() };
@@ -191,11 +197,46 @@ export default function App() {
         setStreamData(null);
       }
     } catch (err) {
+      if (currentPlaybackId.current !== playbackId) return;
       console.error("Resolve Error:", err);
       alert("Failed to resolve stream. Please try again.");
       setStreamData(null);
     }
   };
+
+  const heroItems = useMemo(() => content?.airing?.slice(0, 12) || [], [content]);
+
+  // Calculate IDs that are already displayed in the main sections to avoid duplicates
+  const seenIds = useMemo(() => {
+    if (!content) return [];
+    const allItems = [...(content.trending || []), ...(content.airing || []), ...(content.movies || []), ...(content.classics || [])];
+    return Array.from(new Set(allItems.map(item => item.id)));
+  }, [content]);
+
+  // Progressive Loading Sections Configuration
+  const animeSections = [
+    { id: 'action', title: 'Action & Adventure', genreId: 10759 },
+    { id: 'scifi', title: 'Sci-Fi & Fantasy', genreId: 10765 },
+    { id: 'comedy', title: 'Comedy', genreId: 35 },
+    { id: 'drama', title: 'Drama & Slice of Life', genreId: 18 },
+    { id: 'mystery', title: 'Mystery & Thriller', genreId: 9648 },
+  ];
+
+  // Fetch extra sections in a batch to ensure deduplication
+  const { data: additionalSections, isLoading: areSectionsLoading } = useQuery({
+    queryKey: ['sections_batch', activeTab, seenIds.length], // Depend on seenIds length to refetch if main content changes
+    queryFn: async () => {
+      if (activeTab !== 'anime' || seenIds.length === 0) return [];
+      const res = await axios.post(`${BACKEND_URL}/api/sections/batch`, {
+        type: 'anime',
+        sections: animeSections,
+        excludeIds: seenIds
+      });
+      return res.data;
+    },
+    enabled: activeTab === 'anime' && seenIds.length > 0,
+    staleTime: 1000 * 60 * 60,
+  });
 
   if (isContentLoading && !content) return <SplashScreen />;
 
@@ -218,7 +259,7 @@ export default function App() {
       {(activeTab === 'home' || activeTab === 'anime') && content ? (
         <>
           <HeroCarousel
-            items={content.airing.slice(0, 12)}
+            items={heroItems}
             onPlay={startPlayback}
             onInfo={handleCardClick}
           />
@@ -242,6 +283,24 @@ export default function App() {
             items={content.classics}
             onPlay={handleCardClick}
           />
+
+          {/* Batch Loaded Sections */}
+          {activeTab === 'anime' && (
+            areSectionsLoading ? (
+              <div className="px-8 lg:px-12 py-4 max-w-[1600px] mx-auto space-y-12">
+                {[1, 2].map(i => (
+                  <div key={i}>
+                    <div className="h-6 w-48 bg-surfaceHighlight rounded mb-6 animate-pulse" />
+                    <SeasonListSkeleton />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              additionalSections?.map(section => (
+                <MediaGrid key={section.id} title={section.title} items={section.items} onPlay={handleCardClick} />
+              ))
+            )
+          )}
         </>
       ) : (
         <div className="flex items-center justify-center h-[50vh] text-textMuted">
@@ -273,7 +332,10 @@ export default function App() {
       {streamData && (
         <Player
           {...streamData}
-          onClose={() => setStreamData(null)}
+          onClose={() => {
+            setStreamData(null);
+            currentPlaybackId.current = null;
+          }}
           currentAudio={streamData.audio}
           currentQuality={streamData.quality}
           onUpdateStream={(newOptions) => startPlayback(streamData.media, { ...streamData, ...newOptions })}

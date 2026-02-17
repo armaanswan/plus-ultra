@@ -92,10 +92,10 @@ export function ModalSkeleton() {
 
 export function SeasonListSkeleton() {
     return (
-        <div className="flex gap-3 overflow-hidden pb-2">
-            {[1, 2, 3].map((i) => (
-                <div key={i} className="flex-shrink-0 w-32 flex flex-col gap-2 animate-pulse">
-                    <div className="w-full aspect-[2/3] bg-gray-300 dark:bg-zinc-950 rounded-lg" />
+        <div className="flex gap-4 overflow-hidden pb-2">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="flex-shrink-0 w-[160px] md:w-[200px] flex flex-col gap-2 animate-pulse">
+                    <div className="w-full aspect-[2/3] bg-gray-300 dark:bg-zinc-900 rounded-lg" />
                     <div className="h-3 w-3/4 bg-gray-200 dark:bg-zinc-900 rounded" />
                 </div>
             ))}

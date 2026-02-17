@@ -29,7 +29,7 @@ app.use(express.json());
 // ==========================================
 
 // Helper to fetch from TMDB with common params
-const fetchTMDB = async (endpoint, params = {}) => {
+const fetchTMDB = async (endpoint, params = {}, limit = 12) => {
     try {
         const isMovie = endpoint.includes('movie');
         const dateParam = isMovie ? 'primary_release_date.gte' : 'first_air_date.gte';
@@ -49,8 +49,7 @@ const fetchTMDB = async (endpoint, params = {}) => {
             .map(item => ({
                 ...item,
                 media_type: item.title ? 'movie' : 'tv' // TMDB discover doesn't always return media_type
-            }))
-            .slice(0, 12); // Limit to 12 items
+            })).slice(0, limit);
     } catch (error) {
         console.error(`TMDB Fetch Error (${endpoint}):`, error.message);
         return [];
@@ -133,6 +132,84 @@ app.get('/api/anime', async (req, res) => {
     } catch (error) {
         console.error("Anime API Error:", error.message);
         res.status(500).json({ error: "Failed to fetch anime data" });
+    }
+});
+
+// 3. Get Specific Sections (Progressive Loading)
+app.get('/api/sections/:type/:genreId', async (req, res) => {
+    const { type, genreId } = req.params;
+    const { excludeIds } = req.query;
+    const excluded = new Set((excludeIds || '').split(',').map(Number));
+
+    try {
+        const params = {
+            sort_by: 'popularity.desc',
+            with_genres: genreId,
+            'vote_count.gte': 50,
+            'first_air_date.gte': '2010-01-01'
+        };
+
+        if (type === 'anime') {
+            params.with_genres = `16,${genreId}`; // Animation + Genre
+            params.with_original_language = 'ja';
+
+            // Fetch 20 items (more than needed) to allow for filtering
+            const results = await fetchTMDB('/discover/tv', params, 20);
+
+            // Filter out excluded IDs and return top 12
+            const filtered = results.filter(item => !excluded.has(item.id));
+            return res.json(filtered.slice(0, 12));
+        }
+
+        res.json([]);
+    } catch (error) {
+        console.error(`Section Error ${type}/${genreId}:`, error.message);
+        res.json([]);
+    }
+});
+
+// 4. Get Batch Sections (Deduplicated)
+app.post('/api/sections/batch', async (req, res) => {
+    const { type, sections, excludeIds = [] } = req.body;
+    const seen = new Set(excludeIds.map(Number));
+    const results = [];
+
+    try {
+        // 1. Fetch raw data for all sections in parallel (Fetch 3 pages/60 items to ensure depth)
+        const promises = sections.map(async (section) => {
+            const params = {
+                sort_by: 'popularity.desc',
+                with_genres: type === 'anime' ? `16,${section.genreId}` : section.genreId,
+                'vote_count.gte': 50,
+                'first_air_date.gte': '2010-01-01'
+            };
+            if (type === 'anime') params.with_original_language = 'ja';
+
+            const pages = await Promise.all([
+                fetchTMDB('/discover/tv', { ...params, page: 1 }, 20),
+                fetchTMDB('/discover/tv', { ...params, page: 2 }, 20),
+                fetchTMDB('/discover/tv', { ...params, page: 3 }, 20)
+            ]);
+            return { ...section, items: pages.flat() };
+        });
+
+        const rawSections = await Promise.all(promises);
+
+        // 2. Process sequentially to deduplicate
+        for (const section of rawSections) {
+            const uniqueItems = section.items.filter(item => !seen.has(item.id));
+            const sliced = uniqueItems.slice(0, 12); // Ensure exactly 12 items
+
+            if (sliced.length >= 12) {
+                sliced.forEach(item => seen.add(item.id));
+                results.push({ ...section, items: sliced });
+            }
+        }
+
+        res.json(results);
+    } catch (error) {
+        console.error("Batch Section Error:", error.message);
+        res.json([]);
     }
 });
 

@@ -49,6 +49,8 @@ export default function DetailModal({ item, onClose, onPlay }) {
     const [showDownloadModal, setShowDownloadModal] = useState(false);
     const [downloadEpisodes, setDownloadEpisodes] = useState([]);
     const scrollContainerRef = useRef(null);
+    const scrollRestorationRef = useRef(null);
+    const [isImageLoaded, setIsImageLoaded] = useState(false);
     const showSingleSeason = localStorage.getItem('settings_showSingleSeason') !== 'false';
 
     // Disable Body Scroll
@@ -89,10 +91,28 @@ export default function DetailModal({ item, onClose, onPlay }) {
         queryFn: async () => {
             const searchRes = await axios.get(`${CONSUMET_URL}/anime/animepahe/${encodeURIComponent(title)}`);
             if (searchRes.data.results?.length > 0) {
-                let validSeasons = searchRes.data.results.filter(r =>
-                    r.title.toLowerCase().includes(title.toLowerCase())
-                );
-                if (validSeasons.length === 0) validSeasons = searchRes.data.results;
+                const tmdbYear = parseInt((details?.release_date || details?.first_air_date || currentItem.release_date || currentItem.first_air_date || '0').split('-')[0]);
+
+                let validSeasons = searchRes.data.results.filter(r => {
+                    const rTitle = r.title.toLowerCase();
+                    const qTitle = title.toLowerCase();
+
+                    // 1. Strict Start Check (Fixes "Steins;Gate" showing for "Gate")
+                    if (!rTitle.startsWith(qTitle)) return false;
+
+                    // 2. Year Check (Fixes "Gate Keepers" (2000) showing for "Gate" (2015))
+                    const rYear = parseInt(String(r.releaseDate || "").match(/\d{4}/)?.[0] || "0");
+                    if (tmdbYear && rYear > 0 && rYear < (tmdbYear - 1)) return false;
+
+                    return true;
+                });
+
+                if (validSeasons.length === 0) {
+                    validSeasons = searchRes.data.results.filter(r =>
+                        r.title.toLowerCase().includes(title.toLowerCase())
+                    );
+                }
+
                 validSeasons.sort((a, b) => {
                     const yearA = parseInt(String(a.releaseDate || "").match(/\d{4}/)?.[0] || "0");
                     const yearB = parseInt(String(b.releaseDate || "").match(/\d{4}/)?.[0] || "0");
@@ -136,10 +156,26 @@ export default function DetailModal({ item, onClose, onPlay }) {
         staleTime: 1000 * 60 * 30,
     });
 
-    // Scroll to top when item changes
+    // Ensure valid season is selected when details load
+    useEffect(() => {
+        if (details?.seasons?.length > 0) {
+            const firstSeason = details.seasons.find(s => s.season_number > 0);
+            if (firstSeason) {
+                const isValid = details.seasons.some(s => s.season_number === selectedSeason);
+                if (!isValid) setSelectedSeason(firstSeason.season_number);
+            }
+        }
+    }, [details, selectedSeason]);
+
+    // Scroll to top or restore position when item changes
     useEffect(() => {
         if (scrollContainerRef.current) {
-            scrollContainerRef.current.scrollTop = 0;
+            if (scrollRestorationRef.current !== null) {
+                scrollContainerRef.current.scrollTop = scrollRestorationRef.current;
+                scrollRestorationRef.current = null;
+            } else {
+                scrollContainerRef.current.scrollTop = 0;
+            }
         }
     }, [currentItem]);
 
@@ -147,6 +183,7 @@ export default function DetailModal({ item, onClose, onPlay }) {
     useEffect(() => {
         setCurrentAnimeId(null);
         setSelectedSeason(1);
+        setIsImageLoaded(false);
     }, [currentItem.id]);
 
     const handleClose = () => {
@@ -155,14 +192,16 @@ export default function DetailModal({ item, onClose, onPlay }) {
     };
 
     const handleRecommendationClick = (newItem) => {
-        setHistory([...history, currentItem]);
+        const scrollTop = scrollContainerRef.current ? scrollContainerRef.current.scrollTop : 0;
+        setHistory([...history, { item: currentItem, scrollTop }]);
         setCurrentItem(newItem);
     };
 
     const handleBack = () => {
-        const prevItem = history[history.length - 1];
+        const prev = history[history.length - 1];
         setHistory(history.slice(0, -1));
-        setCurrentItem(prevItem);
+        scrollRestorationRef.current = prev.scrollTop;
+        setCurrentItem(prev.item);
     };
 
     const handleDownload = async (episodesToDownload, options = {}) => {
@@ -230,6 +269,11 @@ export default function DetailModal({ item, onClose, onPlay }) {
         ? details?.content_ratings?.results?.find(r => r.iso_3166_1 === 'US')?.rating
         : details?.release_dates?.results?.find(r => r.iso_3166_1 === 'US')?.release_dates?.find(d => d.certification)?.certification;
 
+    const displaySeasons = (isAnime && animeSeasons?.length > 0) ? animeSeasons.length : details?.number_of_seasons;
+    const displayEpisodes = (isAnime && animeData?.episodes?.length > 0) ? animeData.episodes.length : details?.number_of_episodes;
+
+    const showLoading = detailsLoading || !isImageLoaded;
+
     return (
         <div
             className={`fixed inset-0 z-[90] flex items-center justify-center p-4 lg:p-8 bg-black/90 backdrop-blur-sm transition-opacity duration-300 ${isClosing ? 'opacity-0' : 'opacity-100 animate-in fade-in'}`}
@@ -258,19 +302,22 @@ export default function DetailModal({ item, onClose, onPlay }) {
                 </button>
 
                 {/* Loading State */}
-                {detailsLoading && (
+                {showLoading && (
                     <div className="absolute inset-0 z-40 bg-surface overflow-hidden">
                         <ModalSkeleton />
                     </div>
                 )}
 
-                <div ref={scrollContainerRef} className={`flex-1 overflow-y-auto transition-opacity duration-500 ease-in-out ${detailsLoading ? 'opacity-0' : 'opacity-100'}`}>
+                <div ref={scrollContainerRef} className={`flex-1 overflow-y-auto transition-opacity duration-500 ease-in-out ${showLoading ? 'opacity-0' : 'opacity-100'}`}>
                     {/* HERO BANNER */}
                     <div className="relative h-[385px] lg:h-[500px] w-full shrink-0">
                         <img
+                            key={backdrop}
                             src={`${TMDB_IMAGE_BASE}${backdrop}`}
                             alt={title}
                             className="w-full h-full object-cover"
+                            onLoad={() => setIsImageLoaded(true)}
+                            onError={() => setIsImageLoaded(true)}
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent"></div>
 
@@ -365,7 +412,7 @@ export default function DetailModal({ item, onClose, onPlay }) {
                                         {formattedDate}
                                     </div>
                                 </div>
-                                {isTV && details?.number_of_seasons && <span className="text-gray-300 font-medium">{details.number_of_seasons} Seasons • {details.number_of_episodes} Eps</span>}
+                                {isTV && displaySeasons && <span className="text-gray-300 font-medium">{displaySeasons} Seasons • {displayEpisodes} Eps</span>}
                                 {!isTV && runtime && <span className="text-gray-400 text-sm font-medium">{runtime}</span>}
                                 {details?.status && <span className="text-gray-400 text-sm font-medium">{details.status}</span>}
                             </div>

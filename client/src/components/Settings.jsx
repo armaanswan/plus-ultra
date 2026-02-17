@@ -101,7 +101,7 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
                 {/* Close Button */}
                 <button
                     onClick={onClose}
-                    className="absolute top-6 right-6 z-50 p-2 rounded-full hover:bg-gray-200 dark:hover:bg-white/10 text-textMuted hover:text-textMain transition-all cursor-pointer select-none"
+                    className="absolute top-6 right-6 z-50 p-2 rounded-full bg-gray-100 dark:bg-zinc-800 hover:bg-gray-200 dark:hover:!bg-[#E50914]/20 text-textMuted hover:text-textMain transition-all cursor-pointer select-none"
                 >
                     <X className="w-5 h-5" />
                 </button>
@@ -120,7 +120,7 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
                                 onClick={() => setActiveTab(tab.id)}
                                 className={`flex items-center gap-4 px-4 py-3 rounded-xl text-left transition-all group cursor-pointer select-none ${activeTab === tab.id
                                     ? 'bg-[#E50914] text-white shadow-lg shadow-red-900/20'
-                                    : 'text-textMuted hover:bg-gray-200 dark:hover:bg-white/10 hover:text-textMain'
+                                    : 'text-textMuted hover:bg-gray-200 dark:hover:!bg-[#E50914]/10 hover:text-textMain'
                                     }`}
                             >
                                 <tab.icon className={`w-5 h-5 ${activeTab === tab.id ? 'text-white' : 'text-textMuted group-hover:text-textMain'}`} />
@@ -169,7 +169,7 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
                                                 onClick={() => setDefaultPage(page.toLowerCase())}
                                                 className={`flex-1 py-3 rounded-lg border font-bold transition-all flex items-center justify-center gap-2 text-sm cursor-pointer select-none ${defaultPage === page.toLowerCase()
                                                     ? 'border-[#E50914] bg-[#E50914]/10 text-[#E50914]'
-                                                    : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:bg-white/10'
+                                                    : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:!bg-[#E50914]/10'
                                                     }`}
                                             >
                                                 {page}
@@ -211,7 +211,7 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
                                                     onClick={() => setCarouselPauseMode(mode.id)}
                                                     className={`px-4 py-2 rounded-lg font-bold text-sm transition-all border cursor-pointer select-none ${carouselPauseMode === mode.id
                                                         ? 'border-[#E50914] bg-[#E50914]/10 text-[#E50914]'
-                                                        : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:bg-white/10'
+                                                        : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:!bg-[#E50914]/10'
                                                         }`}
                                                 >
                                                     {mode.label}
@@ -266,7 +266,7 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
                                                     onClick={() => setStreamQuality(q)}
                                                     className={`px-4 py-2 rounded-lg font-bold text-sm transition-all border cursor-pointer select-none ${streamQuality === q
                                                         ? 'border-[#E50914] bg-[#E50914]/10 text-[#E50914]'
-                                                        : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:bg-white/10'
+                                                        : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:!bg-[#E50914]/10'
                                                         }`}
                                                 >
                                                     {q}
@@ -283,7 +283,7 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
                                                     onClick={() => setAudioLang(a)}
                                                     className={`px-4 py-2 rounded-lg font-bold text-sm uppercase transition-all border cursor-pointer select-none ${audioLang === a
                                                         ? 'border-[#E50914] bg-[#E50914]/10 text-[#E50914]'
-                                                        : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:bg-white/10'
+                                                        : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:!bg-[#E50914]/10'
                                                         }`}
                                                 >
                                                     {a}
@@ -310,7 +310,7 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
                                         </div>
                                         <button
                                             onClick={handleBrowse}
-                                            className="px-4 py-2 bg-surfaceHighlight border border-border rounded-lg font-bold text-sm hover:bg-gray-200 dark:hover:bg-white/10 transition-all cursor-pointer select-none whitespace-nowrap text-textMain"
+                                            className="px-4 py-2 bg-surfaceHighlight border border-border rounded-lg font-bold text-sm hover:bg-gray-200 dark:hover:!bg-[#E50914]/10 transition-all cursor-pointer select-none whitespace-nowrap text-textMain"
                                         >
                                             Change
                                         </button>
@@ -329,7 +329,7 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
                                                         onClick={() => setDownloadQuality(q)}
                                                         className={`px-4 py-2 rounded-lg font-bold text-sm transition-all border cursor-pointer select-none ${downloadQuality === q
                                                             ? 'border-[#E50914] bg-[#E50914]/10 text-[#E50914]'
-                                                            : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:bg-white/10'
+                                                            : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:!bg-[#E50914]/10'
                                                             }`}
                                                     >
                                                         {q}
@@ -360,7 +360,7 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
                                                         onClick={() => setDownloadAudio(a)}
                                                         className={`px-4 py-2 rounded-lg font-bold text-sm uppercase transition-all border cursor-pointer select-none ${downloadAudio === a
                                                             ? 'border-[#E50914] bg-[#E50914]/10 text-[#E50914]'
-                                                            : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:bg-white/10'
+                                                            : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:!bg-[#E50914]/10'
                                                             }`}
                                                     >
                                                         {a}
@@ -424,7 +424,7 @@ function ThemeCard({ active, onClick, icon: Icon, label }) {
             onClick={onClick}
             className={`flex items-center justify-center gap-3 p-4 rounded-xl border transition-all cursor-pointer select-none ${active
                 ? 'border-[#E50914] bg-[#E50914]/10 text-[#E50914]'
-                : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:bg-white/10'
+                : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:!bg-[#E50914]/10'
                 }`}
         >
             {Icon && <Icon className="w-5 h-5" />}

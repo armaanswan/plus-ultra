@@ -40,7 +40,7 @@ export default function DownloadModal({ item, episodes, onClose, onDownload }) {
     };
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in p-4" onClick={onClose}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in p-4" onClick={(e) => { e.stopPropagation(); onClose(); }}>
             <div className="w-full max-w-2xl bg-surface border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
 
                 {/* Header */}
