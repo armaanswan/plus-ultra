@@ -6,3 +6,4 @@ export { default as HeroCarousel } from './HeroCarousel';
 export { default as Settings } from './Settings';
 export { default as GenreList } from './GenreList';
 export { default as DetailModal } from './DetailModal';
+export { default as DownloadWidget } from './DownloadWidget';

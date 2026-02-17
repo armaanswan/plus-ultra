@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { URL } from 'url';
 import path from 'path';
 import os from 'os';
@@ -335,7 +335,17 @@ app.post('/api/resolve', async (req, res) => {
                 const match = s.quality.match(/(\d+)/);
                 return match ? parseInt(match[1]) : 0;
             };
-            return getQuality(b) - getQuality(a);
+
+            const qualityDiff = getQuality(b) - getQuality(a);
+            if (qualityDiff !== 0) return qualityDiff;
+
+            // Tie-breaker: Prefer MP4 (not m3u8) to avoid stitching overhead
+            const isM3u8A = (a.isM3U8 || a.url.includes('.m3u8'));
+            const isM3u8B = (b.isM3U8 || b.url.includes('.m3u8'));
+
+            if (isM3u8A && !isM3u8B) return 1; // B (MP4) comes first
+            if (!isM3u8A && isM3u8B) return -1; // A (MP4) comes first
+            return 0;
         });
 
         let source = validSources[0]; // Default to highest available
@@ -364,7 +374,8 @@ app.post('/api/resolve', async (req, res) => {
             streamUrl: proxyStreamUrl, // Feed this to ArtPlayer
             originalUrl: source.url,
             referer: referer,
-            downloadUrl: watchRes.data.download // Direct download link from provider
+            downloadSources: watchRes.data.download, // All available MP4 download sources
+            providerEpisodeId: targetEpisode.id
         });
 
     } catch (error) {
@@ -398,14 +409,19 @@ app.get('/proxy', async (req, res) => {
                 'Referer': referer || '',
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             },
-            responseType: 'arraybuffer' // Crucial for handling video data
+            responseType: 'stream' // CHANGED: Use stream to handle large MP4s without memory issues
         });
 
         const contentType = response.headers['content-type'];
 
         // REWRITE LOGIC: If it's a playlist (M3U8), we must rewrite internal links
         if (contentType && (contentType.includes('mpegurl') || contentType.includes('m3u8'))) {
-            const m3u8Content = response.data.toString('utf8');
+            // Collect the stream into a buffer solely for text processing
+            const chunks = [];
+            for await (const chunk of response.data) {
+                chunks.push(chunk);
+            }
+            const m3u8Content = Buffer.concat(chunks).toString('utf8');
             const baseUrl = url; // The original source URL
             const origin = `http://localhost:${PORT}`; // This server
 
@@ -430,9 +446,9 @@ app.get('/proxy', async (req, res) => {
             return res.send(modifiedContent);
         }
 
-        // If it's a video segment (.ts file), just pipe it through
+        // If it's a video segment (.ts) or direct video (.mp4), pipe it directly
         if (contentType) res.setHeader('Content-Type', contentType);
-        res.send(response.data);
+        response.data.pipe(res);
 
     } catch (error) {
         console.error('Proxy Stream Error:', error.message);
@@ -441,28 +457,76 @@ app.get('/proxy', async (req, res) => {
 });
 
 // 2. The Downloader (Uses yt-dlp)
-app.get('/download', (req, res) => {
-    const { url, referer, filename } = req.query;
+app.get('/download', async (req, res) => {
+    const { episodeId, quality, audio, filename } = req.query;
+    if (!episodeId) return res.status(400).send('episodeId is required');
 
-    if (!url) return res.status(400).send('URL is required');
+    try {
+        // 1. Fetch sources from Consumet using the episode ID
+        const watchUrl = `${CONSUMET_URL}/anime/animepahe/watch?episodeId=${episodeId}`;
+        console.log(`\nFETCHING DOWNLOAD META: ${watchUrl}`);
+        const watchRes = await axios.get(watchUrl);
+        const downloadSources = watchRes.data.download;
+        const referer = watchRes.data.headers?.Referer;
 
-    // Dynamically find the user's Downloads folder
-    const userHome = os.homedir();
-    const safeFilename = (filename || 'video.mp4').replace(/[^a-zA-Z0-9 \-\(\)\.]/g, '_');
-    const outputPath = path.join(userHome, 'Downloads', safeFilename);
+        if (!downloadSources || downloadSources.length === 0) {
+            throw new Error("No MP4 download sources found from provider.");
+        }
 
-    // Construct the yt-dlp command
-    const userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36";
-    const command = `yt-dlp --no-part --restrict-filenames -N 4 --user-agent "${userAgent}" --referer "${referer || ''}" --progress --no-warnings -o "${outputPath}" "${url}"`;
+        // 2. Filter sources based on user preferences (quality & audio)
+        const qualityNum = quality ? parseInt(quality.match(/\d+/)?.[0]) : 1080;
+        const preferDub = audio === 'dub';
+        console.log(`Filtering for: Quality ~${qualityNum}p, Audio: ${audio}`);
 
-    console.log(`\nSTARTING DOWNLOAD: ${safeFilename}`);
+        const qualityRegex = new RegExp(`\\b${qualityNum}p\\b`);
+        let candidates = downloadSources.filter(s => qualityRegex.test(s.quality));
 
-    exec(command, (error, stdout, stderr) => {
-        if (error) console.error(`Download Error: ${error.message}`);
-        else console.log(`\nDOWNLOAD COMPLETE: ${safeFilename}`);
-    });
+        // Fallback: If no quality match, use all sources and try to match audio
+        if (candidates.length === 0) {
+            console.warn(`No match for ${qualityNum}p, considering all qualities.`);
+            candidates = downloadSources;
+        }
 
-    res.send(`\nDownload started! Check your folder: ${outputPath}`);
+        let finalCandidates = preferDub
+            ? candidates.filter(s => s.quality.includes('eng'))
+            : candidates.filter(s => !s.quality.includes('eng'));
+
+        // Fallback: If no audio match, use the first available in the quality tier
+        const targetSource = finalCandidates[0] || candidates[0];
+
+        if (!targetSource) {
+            return res.status(404).send('No suitable download link found for your preferences.');
+        }
+
+        const downloadUrl = targetSource.url;
+        const safeFilename = (filename || 'video.mp4').replace(/[^a-zA-Z0-9 \-\(\)\.]/g, '_');
+
+        console.log(`STREAMING DOWNLOAD: ${safeFilename} (${targetSource.quality})`);
+
+        // 3. Proxy the selected MP4 stream to the client
+        const response = await axios({
+            method: 'get',
+            url: downloadUrl,
+            headers: { 'Referer': referer || '' },
+            responseType: 'stream'
+        });
+
+        // 4. Set headers to trigger browser download & show progress
+        res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
+        if (response.headers['content-length']) res.setHeader('Content-Length', response.headers['content-length']);
+        res.setHeader('Content-Type', 'video/mp4');
+
+        // 5. Pipe video data to client and handle cancellation
+        response.data.pipe(res);
+        req.on('close', () => {
+            if (response.data.destroy) response.data.destroy();
+            console.log('Download cancelled by client. Upstream connection terminated.');
+        });
+
+    } catch (error) {
+        console.error('Download Endpoint Error:', error.message);
+        if (!res.headersSent) res.status(500).send('Error preparing download.');
+    }
 });
 
 // ==========================================

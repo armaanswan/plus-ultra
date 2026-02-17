@@ -39,7 +39,7 @@ function formatDuration(time) {
     return time;
 }
 
-export default function DetailModal({ item, onClose, onPlay }) {
+export default function DetailModal({ item, onClose, onPlay, onQueueDownloads }) {
     const [currentItem, setCurrentItem] = useState(item);
     const [history, setHistory] = useState([]);
     // const [loading, setLoading] = useState(true); // Replaced by React Query
@@ -52,6 +52,9 @@ export default function DetailModal({ item, onClose, onPlay }) {
     const scrollRestorationRef = useRef(null);
     const [isImageLoaded, setIsImageLoaded] = useState(false);
     const showSingleSeason = localStorage.getItem('settings_showSingleSeason') !== 'false';
+    const hideOVA = localStorage.getItem('settings_hideOVA') === 'true';
+    const hideONA = localStorage.getItem('settings_hideONA') === 'true';
+    const hideSeasonPosters = localStorage.getItem('settings_hideSeasonPosters') === 'true';
 
     // Disable Body Scroll
     useEffect(() => {
@@ -204,42 +207,16 @@ export default function DetailModal({ item, onClose, onPlay }) {
         setCurrentItem(prev.item);
     };
 
-    const handleDownload = async (episodesToDownload, options = {}) => {
-        const downloadPath = localStorage.getItem('settings_downloadPath');
-        if (!downloadPath) {
-            alert("Please set a download folder in Settings first!");
-            return;
-        }
+    const handleConfirmDownload = (options) => {
+        const meta = {
+            title: details.title || details.name || currentItem.title,
+            releaseYear: (details.release_date || details.first_air_date || '').split('-')[0],
+            type: currentItem.media_type || 'tv',
+            seasonNumber: selectedSeason
+        };
 
-        for (const ep of episodesToDownload) {
-            try {
-                const payload = {
-                    title: details.title || details.name || currentItem.title,
-                    releaseYear: (details.release_date || details.first_air_date || '').split('-')[0],
-                    type: currentItem.media_type || 'tv',
-                    episodeNumber: ep.episode_number || ep.number || 1,
-                    audio: options.audio || localStorage.getItem('settings_downloadAudio') || 'dub',
-                    quality: options.quality || localStorage.getItem('settings_downloadQuality') || '1080p'
-                };
-
-                const res = await axios.post(`${BACKEND_URL}/api/resolve`, payload);
-
-                if (res.data.streamUrl) {
-                    const filename = `${payload.title} - S${String(selectedSeason).padStart(2, '0')}E${String(payload.episodeNumber).padStart(2, '0')}.mp4`;
-                    await axios.get(`${BACKEND_URL}/download`, {
-                        params: {
-                            url: res.data.streamUrl,
-                            referer: res.data.referer,
-                            filename: filename,
-                            downloadPath: downloadPath
-                        }
-                    });
-                }
-            } catch (err) {
-                console.error("Download failed for ep", ep, err);
-            }
-        }
-        alert("Downloads started in background!");
+        onQueueDownloads(downloadEpisodes, meta, options);
+        setShowDownloadModal(false);
     };
 
     if (!currentItem) return null;
@@ -269,7 +246,13 @@ export default function DetailModal({ item, onClose, onPlay }) {
         ? details?.content_ratings?.results?.find(r => r.iso_3166_1 === 'US')?.rating
         : details?.release_dates?.results?.find(r => r.iso_3166_1 === 'US')?.release_dates?.find(d => d.certification)?.certification;
 
-    const displaySeasons = (isAnime && animeSeasons?.length > 0) ? animeSeasons.length : details?.number_of_seasons;
+    const filteredAnimeSeasons = (isAnime && animeSeasons?.length > 0) ? animeSeasons.filter(s => {
+        if (hideOVA && s.type === 'OVA') return false;
+        if (hideONA && s.type === 'ONA') return false;
+        return true;
+    }) : [];
+
+    const displaySeasons = (isAnime && animeSeasons?.length > 0) ? filteredAnimeSeasons.length : details?.number_of_seasons;
     const displayEpisodes = (isAnime && animeData?.episodes?.length > 0) ? animeData.episodes.length : details?.number_of_episodes;
 
     const showLoading = detailsLoading || !isImageLoaded;
@@ -362,21 +345,6 @@ export default function DetailModal({ item, onClose, onPlay }) {
                                 {[
                                     { icon: Plus, label: 'Add to Watchlist' },
                                     { icon: Eye, label: 'Mark as Watched' },
-                                    {
-                                        icon: Download,
-                                        label: 'Download',
-                                        onClick: () => {
-                                            const eps = animeData?.episodes || seasonData?.episodes || [];
-                                            if (eps.length > 0) {
-                                                setDownloadEpisodes(eps);
-                                                setShowDownloadModal(true);
-                                            } else if (!isTV) {
-                                                // Movie
-                                                setDownloadEpisodes([{ id: currentItem.id, title: title, number: 1 }]);
-                                                setShowDownloadModal(true);
-                                            }
-                                        }
-                                    }
                                 ].map((btn, idx) => (
                                     <div key={idx} className="relative group">
                                         <button
@@ -436,11 +404,11 @@ export default function DetailModal({ item, onClose, onPlay }) {
                                     {/* Anime Season Selector */}
                                     {animeSeasonsLoading ? (
                                         <SeasonListSkeleton />
-                                    ) : animeSeasons.length > 0 && (showSingleSeason || animeSeasons.length > 1) && (
+                                    ) : filteredAnimeSeasons.length > 0 && (showSingleSeason || filteredAnimeSeasons.length > 1) && (
                                         <>
                                             <h3 className="text-sm font-bold text-textMuted uppercase tracking-wider mb-4">Seasons</h3>
                                             <div className="flex overflow-x-auto pb-4 mb-8 px-1 items-start">
-                                                {animeSeasons.map((season, idx) => {
+                                                {filteredAnimeSeasons.map((season, idx) => {
                                                     const isSelected = currentAnimeId === season.id;
 
                                                     return (
@@ -448,16 +416,18 @@ export default function DetailModal({ item, onClose, onPlay }) {
                                                             key={season.id}
                                                             onClick={() => setCurrentAnimeId(season.id)}
                                                             title={season.title}
-                                                            className={`flex-shrink-0 w-44 p-3 flex flex-col gap-3 group text-left cursor-pointer relative rounded-xl transition-all ${isSelected ? 'bg-primary/10' : 'hover:bg-surfaceHighlight'}`}
+                                                            className={`flex-shrink-0 ${hideSeasonPosters ? 'w-56 p-3' : 'w-44 p-3'} flex flex-col gap-3 group text-left cursor-pointer relative rounded-xl transition-all ${isSelected ? 'bg-primary/10' : 'hover:bg-surfaceHighlight'}`}
                                                         >
-                                                            <div className={`w-full aspect-[2/3] rounded-lg overflow-hidden border-2 relative transition-all ${isSelected
-                                                                ? 'border-primary scale-105'
-                                                                : 'border-transparent'
-                                                                }`}>
-                                                                <img src={season.image} alt={season.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                                            </div>
+                                                            {!hideSeasonPosters && (
+                                                                <div className={`w-full aspect-[2/3] rounded-lg overflow-hidden border-2 relative transition-all ${isSelected
+                                                                    ? 'border-primary scale-105'
+                                                                    : 'border-transparent'
+                                                                    }`}>
+                                                                    <img src={season.image} alt={season.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                                                </div>
+                                                            )}
                                                             <div className="flex flex-col px-1 gap-1.5">
-                                                                <h4 className={`text-sm font-bold truncate leading-tight transition-colors ${isSelected ? 'text-textMain' : 'text-textMain group-hover:text-primary'}`}>{season.title}</h4>
+                                                                <h4 className={`text-sm font-bold leading-tight transition-colors ${isSelected ? 'text-textMain' : 'text-textMain group-hover:text-primary'} ${hideSeasonPosters ? '' : 'truncate'}`}>{season.title}</h4>
                                                                 <div className={`flex items-center gap-2 text-xs font-medium transition-colors ${isSelected ? 'text-textMuted' : 'text-textMuted group-hover:text-primary'}`}>
                                                                     <span>{season.type || 'TV'}</span>
                                                                     <span>•</span>
@@ -472,14 +442,27 @@ export default function DetailModal({ item, onClose, onPlay }) {
                                     )}
 
                                     {animeData ? (
-                                        <h3 className="text-lg font-bold text-textMain normal-case tracking-tight mb-4">
-                                            {(animeData.type === 'Movie' || animeSeasons.find(s => s.id === currentAnimeId)?.type === 'Movie') ? 'Movie' : 'Episodes'} <span className="text-textMain normal-case ml-1">- {animeData.title} ({String(animeData.releaseDate || "").match(/\d{4}/)?.[0] || ''})</span>
-                                        </h3>
+                                        <div className="flex items-center justify-between mb-4">
+                                            <h3 className="text-lg font-bold text-textMain normal-case tracking-tight">
+                                                {(animeData.type === 'Movie' || animeSeasons.find(s => s.id === currentAnimeId)?.type === 'Movie') ? 'Movie' : 'Episodes'} <span className="text-textMain normal-case ml-1">- {animeData.title} ({String(animeData.releaseDate || "").match(/\d{4}/)?.[0] || ''})</span>
+                                            </h3>
+                                            <button
+                                                onClick={() => {
+                                                    if (animeData.episodes?.length > 0) {
+                                                        setDownloadEpisodes(animeData.episodes);
+                                                        setShowDownloadModal(true);
+                                                    }
+                                                }}
+                                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surfaceHighlight hover:bg-primary/10 text-textMuted hover:text-primary transition-colors text-xs font-bold cursor-pointer"
+                                            >
+                                                <Download className="w-3.5 h-3.5" /> Download Season
+                                            </button>
+                                        </div>
                                     ) : (
                                         <div className="h-7 w-1/3 bg-surfaceHighlight rounded mb-4 animate-pulse" />
                                     )}
 
-                                    {animeDataLoading ? (
+                                    {(animeDataLoading || animeSeasonsLoading || (animeSeasons.length > 0 && !currentAnimeId)) ? (
                                         <EpisodeListSkeleton />
                                     ) : animeData ? (
                                         <div className="bg-surface border border-border rounded-xl overflow-hidden flex flex-col max-h-[600px] min-h-[200px]">
@@ -567,7 +550,20 @@ export default function DetailModal({ item, onClose, onPlay }) {
                                 <div className="flex-1 flex flex-col">
                                     {(showSingleSeason || details.seasons.filter(s => s.season_number > 0).length > 1) && (
                                         <>
-                                            <h3 className="text-sm font-bold text-textMuted uppercase tracking-wider mb-3">Seasons</h3>
+                                            <div className="flex items-center justify-between mb-3">
+                                                <h3 className="text-sm font-bold text-textMuted uppercase tracking-wider">Seasons</h3>
+                                                <button
+                                                    onClick={() => {
+                                                        if (seasonData?.episodes?.length > 0) {
+                                                            setDownloadEpisodes(seasonData.episodes);
+                                                            setShowDownloadModal(true);
+                                                        }
+                                                    }}
+                                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surfaceHighlight hover:bg-primary/10 text-textMuted hover:text-primary transition-colors text-xs font-bold cursor-pointer"
+                                                >
+                                                    <Download className="w-3.5 h-3.5" /> Download Season
+                                                </button>
+                                            </div>
                                             <div className="flex gap-3 overflow-x-auto pb-2 mb-6">
                                                 {details.seasons.filter(s => s.season_number > 0).map(season => (
                                                     <button
@@ -649,13 +645,6 @@ export default function DetailModal({ item, onClose, onPlay }) {
                                                                 title="Mark as Watched"
                                                             >
                                                                 <Eye className="w-5 h-5" />
-                                                            </button>
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); }}
-                                                                className="p-2.5 rounded-full hover:bg-surfaceHighlight text-textMuted hover:text-textMain transition-colors"
-                                                                title="Download"
-                                                            >
-                                                                <Download className="w-5 h-5" />
                                                             </button>
                                                             <button
                                                                 onClick={(e) => {
@@ -762,7 +751,7 @@ export default function DetailModal({ item, onClose, onPlay }) {
                     item={details || currentItem}
                     episodes={downloadEpisodes}
                     onClose={() => setShowDownloadModal(false)}
-                    onDownload={(eps, options) => handleDownload(eps, options)}
+                    onConfirm={handleConfirmDownload}
                 />
             )}
         </div>

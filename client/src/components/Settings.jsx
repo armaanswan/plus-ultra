@@ -44,6 +44,9 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
     const [downloadSubs, setDownloadSubs] = useState(() => getStorage('settings_downloadSubs', 'true') === 'true');
     const [showSingleSeason, setShowSingleSeason] = useState(() => getStorage('settings_showSingleSeason', 'true') === 'true');
     const [carouselPauseMode, setCarouselPauseMode] = useState(() => getStorage('settings_carouselPauseMode', 'anywhere'));
+    const [hideOVA, setHideOVA] = useState(() => getStorage('settings_hideOVA', 'false') === 'true');
+    const [hideONA, setHideONA] = useState(() => getStorage('settings_hideONA', 'false') === 'true');
+    const [hideSeasonPosters, setHideSeasonPosters] = useState(() => getStorage('settings_hideSeasonPosters', 'false') === 'true');
 
     const handleBrowse = async () => {
         if ('showDirectoryPicker' in window) {
@@ -72,7 +75,10 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
         setStorage('settings_downloadPath', downloadPath);
         setStorage('settings_showSingleSeason', showSingleSeason);
         setStorage('settings_carouselPauseMode', carouselPauseMode);
-    }, [seekDuration, superSeekDuration, streamQuality, downloadQuality, downloadVideoStrict, downloadAudioStrict, audioLang, downloadAudio, downloadSubs, downloadPath, showSingleSeason, carouselPauseMode]);
+        setStorage('settings_hideOVA', hideOVA);
+        setStorage('settings_hideONA', hideONA);
+        setStorage('settings_hideSeasonPosters', hideSeasonPosters);
+    }, [seekDuration, superSeekDuration, streamQuality, downloadQuality, downloadVideoStrict, downloadAudioStrict, audioLang, downloadAudio, downloadSubs, downloadPath, showSingleSeason, carouselPauseMode, hideOVA, hideONA, hideSeasonPosters]);
 
     // Close on Escape
     useEffect(() => {
@@ -101,7 +107,7 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
                 {/* Close Button */}
                 <button
                     onClick={onClose}
-                    className="absolute top-6 right-6 z-50 p-2 rounded-full bg-gray-100 dark:bg-zinc-800 hover:bg-gray-200 dark:hover:!bg-[#E50914]/20 text-textMuted hover:text-textMain transition-all cursor-pointer select-none"
+                    className="absolute top-6 right-6 z-50 p-2 rounded-full bg-gray-200 dark:bg-white/10 hover:bg-gray-300 dark:hover:bg-white/20 text-textMuted hover:text-textMain transition-all cursor-pointer select-none"
                 >
                     <X className="w-5 h-5" />
                 </button>
@@ -120,7 +126,7 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
                                 onClick={() => setActiveTab(tab.id)}
                                 className={`flex items-center gap-4 px-4 py-3 rounded-xl text-left transition-all group cursor-pointer select-none ${activeTab === tab.id
                                     ? 'bg-[#E50914] text-white shadow-lg shadow-red-900/20'
-                                    : 'text-textMuted hover:bg-gray-200 dark:hover:!bg-[#E50914]/10 hover:text-textMain'
+                                    : 'text-textMuted hover:bg-gray-200 dark:hover:bg-white/10 hover:text-textMain'
                                     }`}
                             >
                                 <tab.icon className={`w-5 h-5 ${activeTab === tab.id ? 'text-white' : 'text-textMuted group-hover:text-textMain'}`} />
@@ -189,9 +195,48 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
                                         </div>
                                         <button
                                             onClick={() => setShowSingleSeason(!showSingleSeason)}
-                                            className={`w-12 h-7 rounded-full transition-colors relative cursor-pointer select-none flex items-center ${showSingleSeason ? 'bg-[#E50914] hover:bg-[#E50914]' : 'bg-surfaceHighlight border border-border hover:border-textMuted'}`}
+                                            className={`w-12 h-7 rounded-full transition-colors relative cursor-pointer select-none flex items-center ${showSingleSeason ? 'bg-[#E50914] hover:bg-[#E50914]' : 'bg-gray-300 dark:bg-zinc-700 border-transparent hover:bg-gray-400 dark:hover:bg-zinc-600'}`}
                                         >
                                             <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${showSingleSeason ? 'translate-x-6' : 'translate-x-1'}`} />
+                                        </button>
+                                    </div>
+
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h3 className="text-sm font-bold text-textMain">Hide OVAs</h3>
+                                            <p className="text-xs text-textMuted">Hide Original Video Animations from season lists.</p>
+                                        </div>
+                                        <button
+                                            onClick={() => setHideOVA(!hideOVA)}
+                                            className={`w-12 h-7 rounded-full transition-colors relative cursor-pointer select-none flex items-center ${hideOVA ? 'bg-[#E50914] hover:bg-[#E50914]' : 'bg-gray-300 dark:bg-zinc-700 border-transparent hover:bg-gray-400 dark:hover:bg-zinc-600'}`}
+                                        >
+                                            <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${hideOVA ? 'translate-x-6' : 'translate-x-1'}`} />
+                                        </button>
+                                    </div>
+
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h3 className="text-sm font-bold text-textMain">Hide ONAs</h3>
+                                            <p className="text-xs text-textMuted">Hide Original Net Animations from season lists.</p>
+                                        </div>
+                                        <button
+                                            onClick={() => setHideONA(!hideONA)}
+                                            className={`w-12 h-7 rounded-full transition-colors relative cursor-pointer select-none flex items-center ${hideONA ? 'bg-[#E50914] hover:bg-[#E50914]' : 'bg-gray-300 dark:bg-zinc-700 border-transparent hover:bg-gray-400 dark:hover:bg-zinc-600'}`}
+                                        >
+                                            <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${hideONA ? 'translate-x-6' : 'translate-x-1'}`} />
+                                        </button>
+                                    </div>
+
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h3 className="text-sm font-bold text-textMain">Hide Season Posters</h3>
+                                            <p className="text-xs text-textMuted">Show a compact list of seasons without images.</p>
+                                        </div>
+                                        <button
+                                            onClick={() => setHideSeasonPosters(!hideSeasonPosters)}
+                                            className={`w-12 h-7 rounded-full transition-colors relative cursor-pointer select-none flex items-center ${hideSeasonPosters ? 'bg-[#E50914] hover:bg-[#E50914]' : 'bg-gray-300 dark:bg-zinc-700 border-transparent hover:bg-gray-400 dark:hover:bg-zinc-600'}`}
+                                        >
+                                            <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${hideSeasonPosters ? 'translate-x-6' : 'translate-x-1'}`} />
                                         </button>
                                     </div>
                                 </Section>
@@ -266,7 +311,7 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
                                                     onClick={() => setStreamQuality(q)}
                                                     className={`px-4 py-2 rounded-lg font-bold text-sm transition-all border cursor-pointer select-none ${streamQuality === q
                                                         ? 'border-[#E50914] bg-[#E50914]/10 text-[#E50914]'
-                                                        : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:!bg-[#E50914]/10'
+                                                        : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:bg-white/10'
                                                         }`}
                                                 >
                                                     {q}
@@ -283,7 +328,7 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
                                                     onClick={() => setAudioLang(a)}
                                                     className={`px-4 py-2 rounded-lg font-bold text-sm uppercase transition-all border cursor-pointer select-none ${audioLang === a
                                                         ? 'border-[#E50914] bg-[#E50914]/10 text-[#E50914]'
-                                                        : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:!bg-[#E50914]/10'
+                                                        : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:bg-white/10'
                                                         }`}
                                                 >
                                                     {a}
@@ -304,8 +349,9 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
                                             <input
                                                 type="text"
                                                 value={downloadPath || ''}
-                                                readOnly
-                                                className="w-full bg-surfaceHighlight border border-border rounded-lg pl-10 pr-4 py-3 text-sm text-textMain font-mono focus:outline-none cursor-not-allowed opacity-70"
+                                                onChange={(e) => setDownloadPath(e.target.value)}
+                                                placeholder="/full/path/to/downloads"
+                                                className="w-full bg-surfaceHighlight border border-border rounded-lg pl-10 pr-4 py-3 text-sm text-textMain font-mono focus:outline-none focus:ring-1 focus:ring-[#E50914] transition-all"
                                             />
                                         </div>
                                         <button
@@ -329,7 +375,7 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
                                                         onClick={() => setDownloadQuality(q)}
                                                         className={`px-4 py-2 rounded-lg font-bold text-sm transition-all border cursor-pointer select-none ${downloadQuality === q
                                                             ? 'border-[#E50914] bg-[#E50914]/10 text-[#E50914]'
-                                                            : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:!bg-[#E50914]/10'
+                                                            : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:bg-white/10'
                                                             }`}
                                                     >
                                                         {q}
@@ -343,7 +389,7 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
                                                 </div>
                                                 <button
                                                     onClick={() => setDownloadVideoStrict(!downloadVideoStrict)}
-                                                    className={`w-12 h-7 rounded-full transition-colors relative cursor-pointer select-none flex items-center ${downloadVideoStrict ? 'bg-[#E50914] hover:bg-[#E50914]' : 'bg-surfaceHighlight border border-border hover:border-textMuted'}`}
+                                                    className={`w-12 h-7 rounded-full transition-colors relative cursor-pointer select-none flex items-center ${downloadVideoStrict ? 'bg-[#E50914] hover:bg-[#E50914]' : 'bg-gray-300 dark:bg-zinc-700 border-transparent hover:bg-gray-400 dark:hover:bg-zinc-600'}`}
                                                 >
                                                     <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${downloadVideoStrict ? 'translate-x-6' : 'translate-x-1'}`} />
                                                 </button>
@@ -360,7 +406,7 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
                                                         onClick={() => setDownloadAudio(a)}
                                                         className={`px-4 py-2 rounded-lg font-bold text-sm uppercase transition-all border cursor-pointer select-none ${downloadAudio === a
                                                             ? 'border-[#E50914] bg-[#E50914]/10 text-[#E50914]'
-                                                            : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:!bg-[#E50914]/10'
+                                                            : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:bg-white/10'
                                                             }`}
                                                     >
                                                         {a}
@@ -374,7 +420,7 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
                                                 </div>
                                                 <button
                                                     onClick={() => setDownloadAudioStrict(!downloadAudioStrict)}
-                                                    className={`w-12 h-7 rounded-full transition-colors relative cursor-pointer select-none flex items-center ${downloadAudioStrict ? 'bg-[#E50914] hover:bg-[#E50914]' : 'bg-surfaceHighlight border border-border hover:border-textMuted'}`}
+                                                    className={`w-12 h-7 rounded-full transition-colors relative cursor-pointer select-none flex items-center ${downloadAudioStrict ? 'bg-[#E50914] hover:bg-[#E50914]' : 'bg-gray-300 dark:bg-zinc-700 border-transparent hover:bg-gray-400 dark:hover:bg-zinc-600'}`}
                                                 >
                                                     <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${downloadAudioStrict ? 'translate-x-6' : 'translate-x-1'}`} />
                                                 </button>
@@ -392,7 +438,7 @@ export default function Settings({ onClose, theme, setTheme, defaultPage, setDef
                                     </div>
                                     <button
                                         onClick={() => setDownloadSubs(!downloadSubs)}
-                                        className={`w-12 h-7 rounded-full transition-colors relative cursor-pointer select-none flex items-center ${downloadSubs ? 'bg-[#E50914] hover:bg-[#E50914]' : 'bg-surfaceHighlight border border-border hover:border-textMuted'}`}
+                                        className={`w-12 h-7 rounded-full transition-colors relative cursor-pointer select-none flex items-center ${downloadSubs ? 'bg-[#E50914] hover:bg-[#E50914]' : 'bg-gray-300 dark:bg-zinc-700 border-transparent hover:bg-gray-400 dark:hover:bg-zinc-600'}`}
                                     >
                                         <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${downloadSubs ? 'translate-x-6' : 'translate-x-1'}`} />
                                     </button>
@@ -424,7 +470,7 @@ function ThemeCard({ active, onClick, icon: Icon, label }) {
             onClick={onClick}
             className={`flex items-center justify-center gap-3 p-4 rounded-xl border transition-all cursor-pointer select-none ${active
                 ? 'border-[#E50914] bg-[#E50914]/10 text-[#E50914]'
-                : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:!bg-[#E50914]/10'
+                : 'border-border bg-surfaceHighlight text-textMuted hover:border-textMuted hover:text-textMain hover:bg-gray-200 dark:hover:bg-white/10'
                 }`}
         >
             {Icon && <Icon className="w-5 h-5" />}

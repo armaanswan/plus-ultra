@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import { Navbar, MediaGrid, Player, LoadingOverlay, HeroCarousel, Settings, GenreList, DetailModal } from './components';
+import { Navbar, MediaGrid, Player, LoadingOverlay, HeroCarousel, Settings, GenreList, DetailModal, DownloadWidget } from './components';
 import { SeasonListSkeleton } from './components/Skeleton';
 import SplashScreen from './components/SplashScreen';
+import { saveAs } from 'file-saver';
 
 // CONFIG
 const BACKEND_URL = 'http://localhost:3001';
@@ -22,6 +23,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'system');
   const [selectedMedia, setSelectedMedia] = useState(null); // For DetailModal
+  const [downloads, setDownloads] = useState([]);
 
   // 1. Fetch Content on Mount & Tab Change
   const { data: content, isLoading: isContentLoading } = useQuery({
@@ -204,6 +206,87 @@ export default function App() {
     }
   };
 
+  // 8. Handle Download Queue
+  const handleQueueDownloads = (items, meta, options) => {
+    const newDownloads = items.map(item => ({
+      id: Date.now() + Math.random(),
+      status: 'pending',
+      progress: 0,
+      fileName: `${meta.title} - ${item.episode_number || item.number || 'Movie'}`,
+      item,
+      meta,
+      options
+    }));
+    setDownloads(prev => [...prev, ...newDownloads]);
+  };
+
+  // 9. Process Download Queue
+  useEffect(() => {
+    const processNext = async () => {
+      const next = downloads.find(d => d.status === 'pending');
+      if (!next) return;
+
+      setDownloads(prev => prev.map(d => d.id === next.id ? { ...d, status: 'downloading' } : d));
+
+      try {
+        const payload = {
+          title: next.meta.title,
+          releaseYear: next.meta.releaseYear,
+          type: next.meta.type,
+          episodeNumber: next.item.episode_number || next.item.number || 1,
+          audio: next.options.audio,
+          quality: next.options.quality
+        };
+
+        const res = await axios.post(`${BACKEND_URL}/api/resolve`, payload);
+
+        if (res.data.streamUrl) {
+          const filename = `${payload.title} - S${String(next.meta.seasonNumber || 1).padStart(2, '0')}E${String(payload.episodeNumber).padStart(2, '0')}.mp4`;
+
+          const response = await axios.get(`${BACKEND_URL}/download`, {
+            params: {
+              episodeId: res.data.providerEpisodeId,
+              quality: next.options.quality,
+              audio: next.options.audio,
+              filename: filename
+            },
+            responseType: 'blob',
+            onDownloadProgress: (progressEvent) => {
+              const percentCompleted = progressEvent.total ? Math.round((progressEvent.loaded * 100) / progressEvent.total) : 0;
+              setDownloads(prev => prev.map(d => d.id === next.id ? { ...d, progress: percentCompleted } : d));
+            }
+          });
+
+          // Check if the response is actually an error (JSON) disguised as a Blob
+          if (response.data.size < 1000) {
+            const text = await response.data.text();
+            try {
+              const json = JSON.parse(text);
+              if (json.error || json.message) {
+                throw new Error(json.error || json.message || "Download failed");
+              }
+            } catch (e) {
+              // If parsing fails but file is tiny, it might still be an error text
+              if (text.toLowerCase().includes("error")) throw new Error("Download failed: " + text);
+            }
+          }
+
+          saveAs(response.data, filename);
+
+          setDownloads(prev => prev.map(d => d.id === next.id ? { ...d, status: 'completed', progress: 100 } : d));
+        } else {
+          throw new Error("Stream not found");
+        }
+      } catch (err) {
+        console.error("Download failed", err);
+        setDownloads(prev => prev.map(d => d.id === next.id ? { ...d, status: 'error', error: err.message || 'Failed' } : d));
+      }
+    };
+
+    const isDownloading = downloads.some(d => d.status === 'downloading');
+    if (!isDownloading) processNext();
+  }, [downloads]);
+
   const heroItems = useMemo(() => content?.airing?.slice(0, 12) || [], [content]);
 
   // Calculate IDs that are already displayed in the main sections to avoid duplicates
@@ -325,6 +408,7 @@ export default function App() {
           item={selectedMedia}
           onClose={() => setSelectedMedia(null)}
           onPlay={startPlayback}
+          onQueueDownloads={handleQueueDownloads}
         />
       )}
 
@@ -351,6 +435,12 @@ export default function App() {
           }}
         />
       )}
+
+      {/* DOWNLOAD WIDGET */}
+      <DownloadWidget
+        downloads={downloads}
+        onClose={() => setDownloads([])}
+      />
     </div>
   );
 }
