@@ -1,5 +1,16 @@
 {
+  "name": "root",
+  "private": true,
+  "scripts": {
+    "start:client": "npm start --prefix client",
+    "start:server": "npm start --prefix server",
+    "start:scraper": "npm start --prefix scrapers/consumet-api",
+    "start": "concurrently \"npm run start:client\" \"npm run start:server\" \"npm run start:scraper\""
+  },
   "dependencies": {
     "file-saver": "^2.0.5"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }

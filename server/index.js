@@ -255,14 +255,19 @@ app.get('/api/details/tv/:id/season/:seasonNumber', async (req, res) => {
 
 app.post('/api/resolve', async (req, res) => {
     // 1. Receive "Context" from React (e.g., "Dandadan", Year: 2024, Ep: 1)
-    const { title, releaseYear, type, episodeNumber, audio, quality } = req.body;
+    const { title, releaseYear, type, episodeNumber, audio, quality, seasonNumber } = req.body;
 
-    console.log(`\nRESOLVING: ${title} (${releaseYear}) - Episode ${episodeNumber}`);
+    console.log(`\nRESOLVING: ${title} (${releaseYear}) - Season ${seasonNumber || 1} Episode ${episodeNumber}`);
 
     try {
         // 2. SEARCH Consumet (AnimePahe) for this title
         // We use your local scraper running on Port 3000
-        const searchUrl = `${CONSUMET_URL}/anime/animepahe/${encodeURIComponent(title)}`;
+        let searchQuery = title;
+        if (seasonNumber && parseInt(seasonNumber) > 1) {
+            searchQuery += ` Season ${seasonNumber}`;
+        }
+
+        const searchUrl = `${CONSUMET_URL}/anime/animepahe/${encodeURIComponent(searchQuery)}`;
         console.log(`[Step 2] Searching Consumet: ${searchUrl}`);
         const searchRes = await axios.get(searchUrl);
         console.log(`[Step 2] Search Status: ${searchRes.status}`);
@@ -276,7 +281,13 @@ app.post('/api/resolve', async (req, res) => {
         // 3. FIND THE BEST MATCH
         // We look for a result where the release year matches.
         // If no year match, we fallback to the very first result.
-        const bestMatch = results.find(anime => anime.releaseDate === String(releaseYear)) || results[0];
+        // If searching for a specific season (S2+), the release year (of S1) won't match, so we rely on the specific search query returning the correct season first.
+        let bestMatch;
+        if (seasonNumber && parseInt(seasonNumber) > 1) {
+            bestMatch = results[0];
+        } else {
+            bestMatch = results.find(anime => anime.releaseDate === String(releaseYear)) || results[0];
+        }
 
         console.log(`\nMATCH FOUND: ${bestMatch.title} (ID: ${bestMatch.id})`);
         console.log(`[Step 3] MATCH FOUND: ${bestMatch.title} (ID: ${bestMatch.id})`);

@@ -181,6 +181,7 @@ export default function App() {
         releaseYear,
         type,
         episodeNumber,
+        seasonNumber,
         audio: audioPref,
         quality: qualityPref
       };
@@ -234,6 +235,7 @@ export default function App() {
           releaseYear: next.meta.releaseYear,
           type: next.meta.type,
           episodeNumber: next.item.episode_number || next.item.number || 1,
+          seasonNumber: next.meta.seasonNumber,
           audio: next.options.audio,
           quality: next.options.quality
         };
