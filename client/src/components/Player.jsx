@@ -42,6 +42,7 @@ export default function Player({ url, poster, title, episodeTitle, episodeNumber
         const art = new Artplayer({
             container: artRef.current,
             url: url,
+
             volume: 0.5,
             isLive: false,
             muted: false,
@@ -65,6 +66,7 @@ export default function Player({ url, poster, title, episodeTitle, episodeNumber
             autoPlayback: true,
             airplay: true,
             theme: '#ef4444', // Red accent for +ultra vibe
+
             notice: false, // Disable "Play/Pause" notifications
             hotkey: false, // Disable built-in hotkeys to use global window listener
             icons: {
@@ -75,10 +77,15 @@ export default function Player({ url, poster, title, episodeTitle, episodeNumber
             customType: {
                 m3u8: function (video, url, art) {
                     if (Hls.isSupported()) {
+                        console.log("HLS is supported, using HLS.js");
                         if (art.hls) art.hls.destroy();
+
+                        // Clean initialization. No xhrSetup proxying.
                         const hls = new Hls();
+
                         hls.loadSource(url);
                         hls.attachMedia(video);
+
                         art.hls = hls;
                         art.on('destroy', () => hls.destroy());
                     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {

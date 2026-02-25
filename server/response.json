@@ -1,0 +1,79 @@
+{
+    "success": true,
+    "data": {
+        "id": "demon-slayer-kimetsu-no-yaiba-swordsmith-village-arc-18056::ep=100090",
+        "type": "sub",
+        "link": {
+            "file": "https://xeanimeproxy.howtoopengemail.workers.dev/?url=https%3A%2F%2Flightningspark77.pro%2F_v7%2F33b7a44fd1438b28fe23e2a94fbe37e4d3be6a4fe755d9e0684d3cfcde8af7bcf25cc9c6780695d5c3999e3df9f2f44a1f253a6cb68d726d5e47f5063b2e662c36b6404ec74ff09d1f2d3101fd65e9ccc48e965044067bfe45b088190939fe398da3584b593ca4ecac874ed3fc618ed595d4fb3feaa7e50e3fe747656ed2f228%2Fmaster.m3u8&referer=https%3A%2F%2Fmegacloud.tv",
+            "type": "hls",
+            "directUrl": "https://lightningspark77.pro/_v7/33b7a44fd1438b28fe23e2a94fbe37e4d3be6a4fe755d9e0684d3cfcde8af7bcf25cc9c6780695d5c3999e3df9f2f44a1f253a6cb68d726d5e47f5063b2e662c36b6404ec74ff09d1f2d3101fd65e9ccc48e965044067bfe45b088190939fe398da3584b593ca4ecac874ed3fc618ed595d4fb3feaa7e50e3fe747656ed2f228/master.m3u8",
+            "proxyUrl": "https://xeanimeproxy.howtoopengemail.workers.dev/?url=https%3A%2F%2Flightningspark77.pro%2F_v7%2F33b7a44fd1438b28fe23e2a94fbe37e4d3be6a4fe755d9e0684d3cfcde8af7bcf25cc9c6780695d5c3999e3df9f2f44a1f253a6cb68d726d5e47f5063b2e662c36b6404ec74ff09d1f2d3101fd65e9ccc48e965044067bfe45b088190939fe398da3584b593ca4ecac874ed3fc618ed595d4fb3feaa7e50e3fe747656ed2f228%2Fmaster.m3u8&referer=https%3A%2F%2Fmegacloud.tv"
+        },
+        "tracks": [
+            {
+                "file": "https://mgstatics.xyz/subtitle/47a735c82b1030cdee003a32122ff7d4/47a735c82b1030cdee003a32122ff7d4.vtt",
+                "label": "Arabic",
+                "kind": "captions"
+            },
+            {
+                "file": "https://mgstatics.xyz/subtitle/d25e0c237502ae202f059d101d3a7ebf/d25e0c237502ae202f059d101d3a7ebf.vtt",
+                "label": "English",
+                "kind": "captions",
+                "default": true
+            },
+            {
+                "file": "https://mgstatics.xyz/subtitle/fcd69b28ae936abccb9ff44c9caf165e/fcd69b28ae936abccb9ff44c9caf165e.vtt",
+                "label": "French",
+                "kind": "captions"
+            },
+            {
+                "file": "https://mgstatics.xyz/subtitle/1f2a66be620c5e307dc76152db9b7990/1f2a66be620c5e307dc76152db9b7990.vtt",
+                "label": "German",
+                "kind": "captions"
+            },
+            {
+                "file": "https://mgstatics.xyz/subtitle/8b927fc4b15a2da33c1943b90098155f/8b927fc4b15a2da33c1943b90098155f.vtt",
+                "label": "Italian",
+                "kind": "captions"
+            },
+            {
+                "file": "https://mgstatics.xyz/subtitle/259229325f7042d97c7bef837027a0b5/259229325f7042d97c7bef837027a0b5.vtt",
+                "label": "Japanese",
+                "kind": "captions"
+            },
+            {
+                "file": "https://mgstatics.xyz/subtitle/a3cf62c95e3c8f58d5da75a3014e603a/a3cf62c95e3c8f58d5da75a3014e603a.vtt",
+                "label": "Portuguese",
+                "kind": "captions"
+            },
+            {
+                "file": "https://mgstatics.xyz/subtitle/9959f010abb7a6d19c0001f6207a7b7e/9959f010abb7a6d19c0001f6207a7b7e.vtt",
+                "label": "Russian",
+                "kind": "captions"
+            },
+            {
+                "file": "https://mgstatics.xyz/subtitle/d83f0624cab687e3d426031cf3695625/d83f0624cab687e3d426031cf3695625.vtt",
+                "label": "Spanish",
+                "kind": "captions"
+            },
+            {
+                "file": "https://mgstatics.xyz/subtitle/1723dfe314efafd7da7e38ad2fb21fb7/1723dfe314efafd7da7e38ad2fb21fb7.vtt",
+                "label": "Spanish - Espanol",
+                "kind": "captions"
+            },
+            {
+                "file": "https://mgstatics.xyz/thumbnails/d8de6335026206b89eaa87caa2ac6348/thumbnails.vtt",
+                "kind": "thumbnails"
+            }
+        ],
+        "intro": {
+            "start": 0,
+            "end": 0
+        },
+        "outro": {
+            "start": 2660,
+            "end": 2899
+        },
+        "server": "HD-1"
+    }
+}

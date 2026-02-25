@@ -134,7 +134,6 @@ export default function App() {
     const episodeNumber = media.episodeNumber || 1;
     const seasonNumber = media.seasonNumber || 1;
     const episodeTitle = media.episodeTitle || '';
-    const totalEpisodes = media.episodes?.length || 0;
 
     // Get preferences from LocalStorage (defaults: Dub, 1080p)
     const audioPref = options.audio || localStorage.getItem('settings_audioLang') || 'dub';
@@ -150,7 +149,6 @@ export default function App() {
         title,
         type,
         episodeNumber,
-        totalEpisodes,
         seasonNumber,
         episodeTitle,
         media,
@@ -163,11 +161,10 @@ export default function App() {
     // 1. Show Player Immediately (Loading State)
     setStreamData({
       url: null, // Indicates loading
-      poster: `${TMDB_IMAGE_BASE}${media.backdrop_path || media.poster_path}`,
+      poster: media.poster || (media.backdrop_path || media.poster_path ? `${TMDB_IMAGE_BASE}${media.backdrop_path || media.poster_path}` : null),
       title,
       type,
       episodeNumber,
-      totalEpisodes,
       seasonNumber,
       episodeTitle,
       media, // Store original media for navigation context
@@ -177,7 +174,7 @@ export default function App() {
 
     try {
       const payload = {
-        title,
+        episodeId: media.episodeId,
         releaseYear,
         type,
         episodeNumber,
@@ -188,7 +185,7 @@ export default function App() {
 
       const res = await axios.post(`${BACKEND_URL}/api/resolve`, payload);
 
-      if (currentPlaybackId.current !== playbackId) return;
+      if (currentPlaybackId.current !== playbackId) return
 
       if (res.data.streamUrl) {
         // Cache the result
@@ -289,7 +286,11 @@ export default function App() {
     if (!isDownloading) processNext();
   }, [downloads]);
 
-  const heroItems = useMemo(() => content?.airing?.slice(0, 12) || [], [content]);
+  const heroItems = useMemo(() => {
+    if (!content) return [];
+    if (activeTab === 'anime') return content.spotlight || [];
+    return content.airing?.slice(0, 12) || [];
+  }, [content, activeTab]);
 
   // Calculate IDs that are already displayed in the main sections to avoid duplicates
   const seenIds = useMemo(() => {
@@ -351,26 +352,25 @@ export default function App() {
 
           <GenreList />
 
-          <MediaGrid
-            title="Trending Now"
-            items={content.trending}
-            onPlay={handleCardClick}
-          />
-
-          <MediaGrid
-            title={activeTab === 'anime' ? "Recent Movies" : "Popular Movies"}
-            items={content.movies}
-            onPlay={handleCardClick}
-          />
-
-          <MediaGrid
-            title={activeTab === 'anime' ? "Recent Hits" : "All Time Classics"}
-            items={content.classics}
-            onPlay={handleCardClick}
-          />
+          {activeTab === 'anime' ? (
+            <>
+              {content.trending && <MediaGrid title="Trending Anime" items={content.trending} onPlay={handleCardClick} />}
+              {content.topAiring && <MediaGrid title="Top Airing" items={content.topAiring} onPlay={handleCardClick} />}
+              {content.mostPopular && <MediaGrid title="Most Popular" items={content.mostPopular} onPlay={handleCardClick} />}
+              {content.mostFavorite && <MediaGrid title="Most Favorite" items={content.mostFavorite} onPlay={handleCardClick} />}
+              {content.latestCompleted && <MediaGrid title="Latest Completed" items={content.latestCompleted} onPlay={handleCardClick} />}
+            </>
+          ) : (
+            <>
+              <MediaGrid title="Trending Now" items={content.trending} onPlay={handleCardClick} />
+              <MediaGrid title="Popular Movies" items={content.movies} onPlay={handleCardClick} />
+              <MediaGrid title="All Time Classics" items={content.classics} onPlay={handleCardClick} />
+            </>
+          )}
 
           {/* Batch Loaded Sections */}
-          {activeTab === 'anime' && (
+          {/* Only show batch sections for TMDB anime if we were using TMDB. Since we switched to HiAnime, we skip this. */}
+          {activeTab === 'anime' && false && (
             areSectionsLoading ? (
               <div className="px-8 lg:px-12 py-4 max-w-[1600px] mx-auto space-y-12">
                 {[1, 2].map(i => (
@@ -427,7 +427,6 @@ export default function App() {
           onUpdateStream={(newOptions) => startPlayback(streamData.media, { ...streamData, ...newOptions })}
           onNext={() => {
             const nextEpNum = streamData.episodeNumber + 1;
-            const nextEp = streamData.media.episodes?.find(e => e.episode_number === nextEpNum);
             startPlayback({ ...streamData.media, episodeNumber: nextEpNum, episodeTitle: nextEp ? nextEp.name : null });
           }}
           onPrev={() => {

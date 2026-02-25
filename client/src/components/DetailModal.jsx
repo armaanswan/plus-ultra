@@ -9,7 +9,6 @@ import { ModalSkeleton, SeasonListSkeleton, EpisodeListSkeleton } from './Skelet
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 const TMDB_POSTER_BASE = 'https://image.tmdb.org/t/p/w500';
 const BACKEND_URL = 'http://localhost:3001';
-const CONSUMET_URL = 'http://localhost:3000';
 
 const CERTIFICATIONS = {
     'G': 'General Audiences',
@@ -43,7 +42,6 @@ export default function DetailModal({ item, onClose, onPlay, onQueueDownloads })
     const [currentItem, setCurrentItem] = useState(item);
     const [history, setHistory] = useState([]);
     // const [loading, setLoading] = useState(true); // Replaced by React Query
-    const [currentAnimeId, setCurrentAnimeId] = useState(null);
     const [selectedSeason, setSelectedSeason] = useState(1);
     const [isClosing, setIsClosing] = useState(false);
     const [showDownloadModal, setShowDownloadModal] = useState(false);
@@ -51,10 +49,10 @@ export default function DetailModal({ item, onClose, onPlay, onQueueDownloads })
     const scrollContainerRef = useRef(null);
     const scrollRestorationRef = useRef(null);
     const [isImageLoaded, setIsImageLoaded] = useState(false);
-    const showSingleSeason = localStorage.getItem('settings_showSingleSeason') !== 'false';
-    const hideOVA = localStorage.getItem('settings_hideOVA') === 'true';
-    const hideONA = localStorage.getItem('settings_hideONA') === 'true';
     const hideSeasonPosters = localStorage.getItem('settings_hideSeasonPosters') === 'true';
+
+    // Determine if this is a HiAnime item (String ID)
+    const isHiAnime = isNaN(Number(currentItem.id));
 
     // Disable Body Scroll
     useEffect(() => {
@@ -72,7 +70,7 @@ export default function DetailModal({ item, onClose, onPlay, onQueueDownloads })
             const res = await axios.get(`${BACKEND_URL}/api/details/${type}/${currentItem.id}`);
 
             // Preload High-Res Background Image
-            const backdropPath = res.data.backdrop_path || currentItem.backdrop_path;
+            const backdropPath = res.data.backdrop_path || res.data.poster || currentItem.backdrop_path || currentItem.poster;
             if (backdropPath) {
                 const img = new Image();
                 img.src = `${TMDB_IMAGE_BASE}${backdropPath}`;
@@ -83,69 +81,15 @@ export default function DetailModal({ item, onClose, onPlay, onQueueDownloads })
         staleTime: 1000 * 60 * 30, // 30 mins
     });
 
-    // 2. Fetch Anime Seasons List (if Anime)
-    const title = details?.title || details?.name || currentItem.title || currentItem.name;
-    const isAnime = details?.original_language === 'ja' &&
-        details?.genres?.some(g => g.name === 'Animation') &&
-        (currentItem.media_type === 'tv' || details?.number_of_seasons);
-
-    const { data: animeSeasons = [], isLoading: animeSeasonsLoading } = useQuery({
-        queryKey: ['anime_search', title],
+    // 2. Fetch Anime Episodes (HiAnime Only)
+    const { data: animeEpisodesData, isLoading: animeEpisodesLoading } = useQuery({
+        queryKey: ['anime_episodes', currentItem.id],
         queryFn: async () => {
-            const searchRes = await axios.get(`${CONSUMET_URL}/anime/animepahe/${encodeURIComponent(title)}`);
-            if (searchRes.data.results?.length > 0) {
-                const tmdbYear = parseInt((details?.release_date || details?.first_air_date || currentItem.release_date || currentItem.first_air_date || '0').split('-')[0]);
-
-                let validSeasons = searchRes.data.results.filter(r => {
-                    const rTitle = r.title.toLowerCase();
-                    const qTitle = title.toLowerCase();
-
-                    // 1. Strict Start Check (Fixes "Steins;Gate" showing for "Gate")
-                    if (!rTitle.startsWith(qTitle)) return false;
-
-                    // 2. Year Check (Fixes "Gate Keepers" (2000) showing for "Gate" (2015))
-                    const rYear = parseInt(String(r.releaseDate || "").match(/\d{4}/)?.[0] || "0");
-                    if (tmdbYear && rYear > 0 && rYear < (tmdbYear - 1)) return false;
-
-                    return true;
-                });
-
-                if (validSeasons.length === 0) {
-                    validSeasons = searchRes.data.results.filter(r =>
-                        r.title.toLowerCase().includes(title.toLowerCase())
-                    );
-                }
-
-                validSeasons.sort((a, b) => {
-                    const yearA = parseInt(String(a.releaseDate || "").match(/\d{4}/)?.[0] || "0");
-                    const yearB = parseInt(String(b.releaseDate || "").match(/\d{4}/)?.[0] || "0");
-                    return yearA - yearB;
-                });
-                return validSeasons;
-            }
-            return [];
+            const res = await axios.get(`${BACKEND_URL}/api/anime/episodes/${currentItem.id}`);
+            return res.data; // Expected { totalEpisodes, episodes: [] }
         },
-        enabled: !!isAnime && !!title,
-        staleTime: 1000 * 60 * 60,
-    });
-
-    // Set initial anime ID when seasons load
-    useEffect(() => {
-        if (animeSeasons.length > 0 && !currentAnimeId) {
-            const match = animeSeasons.find(r => r.title.toLowerCase() === title.toLowerCase()) || animeSeasons[0];
-            if (match) setCurrentAnimeId(match.id);
-        }
-    }, [animeSeasons, title, currentAnimeId]);
-
-    // 3. Fetch Specific Anime Season Data
-    const { data: animeData, isLoading: animeDataLoading } = useQuery({
-        queryKey: ['anime_info', currentAnimeId],
-        queryFn: async () => {
-            const infoRes = await axios.get(`${CONSUMET_URL}/anime/animepahe/info/${currentAnimeId}`);
-            return infoRes.data;
-        },
-        enabled: !!currentAnimeId,
-        staleTime: 1000 * 60 * 60,
+        enabled: isHiAnime,
+        staleTime: 1000 * 60 * 30,
     });
 
     // 4. Fetch TMDB Season Details (if TV)
@@ -155,7 +99,7 @@ export default function DetailModal({ item, onClose, onPlay, onQueueDownloads })
             const res = await axios.get(`${BACKEND_URL}/api/details/tv/${currentItem.id}/season/${selectedSeason}`);
             return res.data;
         },
-        enabled: !!details && (currentItem.media_type === 'tv' || !!details.seasons),
+        enabled: !isHiAnime && !!details && (currentItem.media_type === 'tv' || !!details.seasons),
         staleTime: 1000 * 60 * 30,
     });
 
@@ -184,7 +128,6 @@ export default function DetailModal({ item, onClose, onPlay, onQueueDownloads })
 
     // Reset state when item changes
     useEffect(() => {
-        setCurrentAnimeId(null);
         setSelectedSeason(1);
         setIsImageLoaded(false);
     }, [currentItem.id]);
@@ -221,39 +164,40 @@ export default function DetailModal({ item, onClose, onPlay, onQueueDownloads })
 
     if (!currentItem) return null;
 
-    // const title = details?.title || details?.name || currentItem.title || currentItem.name; // Already defined above
-    const backdrop = details?.backdrop_path || currentItem.backdrop_path;
-    const year = (details?.release_date || details?.first_air_date || currentItem.release_date || currentItem.first_air_date || '????').split('-')[0];
-    const fullDate = details?.release_date || details?.first_air_date || currentItem.release_date || currentItem.first_air_date;
+    const title = details?.title || details?.name || currentItem.title || currentItem.name;
+    const backdrop = details?.backdrop_path || details?.poster || currentItem.backdrop_path || currentItem.poster;
+    const year = (details?.release_date || details?.first_air_date || details?.aired?.from || currentItem.release_date || currentItem.first_air_date || '????').split('-')[0];
+    const fullDate = details?.release_date || details?.first_air_date || details?.aired?.from || currentItem.release_date || currentItem.first_air_date;
     const formattedDate = fullDate ? new Date(fullDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Unknown Date';
-    const runtime = details?.runtime ? `${Math.floor(details.runtime / 60)}h ${details.runtime % 60}m` : null;
-    const genres = details?.genres || [];
+    const runtime = details?.duration || (details?.runtime ? `${Math.floor(details.runtime / 60)}h ${details.runtime % 60}m` : null);
+
+    // Normalize Genres (TMDB uses objects, HiAnime uses strings)
+    const genres = details?.genres?.map(g => typeof g === 'string' ? { name: g, id: g } : g) || [];
+
     const keywords = details?.keywords?.keywords || details?.keywords?.results || [];
     const cast = details?.credits?.cast?.slice(0, 10) || [];
+    const studios = details?.studios || [];
+    const producers = details?.producers || [];
 
-    const isAnimeContent = isAnime; // Re-use logic
     let rawRecommendations = (details?.recommendations?.results?.length > 0
         ? details.recommendations.results
-        : details?.similar?.results) || [];
+        : (details?.recommended || details?.mostPopular || details?.similar?.results)) || [];
 
-    if (isAnimeContent) {
-        rawRecommendations = rawRecommendations.filter(rec => rec.original_language === 'ja' && rec.genre_ids?.includes(16));
-    }
     const recommendations = rawRecommendations.slice(0, 20).map(rec => ({ ...rec, media_type: rec.media_type || currentItem.media_type || (currentItem.title ? 'movie' : 'tv') }));
 
-    const isTV = (currentItem.media_type === 'tv' || details?.seasons);
+    const isTV = (currentItem.media_type === 'tv' || details?.seasons || details?.type === 'TV');
     const certification = isTV
         ? details?.content_ratings?.results?.find(r => r.iso_3166_1 === 'US')?.rating
         : details?.release_dates?.results?.find(r => r.iso_3166_1 === 'US')?.release_dates?.find(d => d.certification)?.certification;
 
-    const filteredAnimeSeasons = (isAnime && animeSeasons?.length > 0) ? animeSeasons.filter(s => {
-        if (hideOVA && s.type === 'OVA') return false;
-        if (hideONA && s.type === 'ONA') return false;
-        return true;
-    }) : [];
+    // HiAnime Seasons
+    const moreSeasons = details?.moreSeasons || [];
 
-    const displaySeasons = (isAnime && animeSeasons?.length > 0) ? filteredAnimeSeasons.length : details?.number_of_seasons;
-    const displayEpisodes = (isAnime && animeData?.episodes?.length > 0) ? animeData.episodes.length : details?.number_of_episodes;
+    // HiAnime Episodes
+    const animeEpisodes = animeEpisodesData?.episodes || [];
+
+    const displaySeasons = isHiAnime ? moreSeasons.length : details?.number_of_seasons;
+    const displayEpisodes = isHiAnime ? animeEpisodes.length : details?.number_of_episodes;
 
     const showLoading = detailsLoading || !isImageLoaded;
 
@@ -296,7 +240,7 @@ export default function DetailModal({ item, onClose, onPlay, onQueueDownloads })
                     <div className="relative h-[385px] lg:h-[500px] w-full shrink-0">
                         <img
                             key={backdrop}
-                            src={`${TMDB_IMAGE_BASE}${backdrop}`}
+                            src={backdrop && backdrop.startsWith('http') ? backdrop : `${TMDB_IMAGE_BASE}${backdrop}`}
                             alt={title}
                             className="w-full h-full object-cover"
                             onLoad={() => setIsImageLoaded(true)}
@@ -312,15 +256,15 @@ export default function DetailModal({ item, onClose, onPlay, onQueueDownloads })
                             <div className="flex flex-wrap items-center gap-4">
                                 <button
                                     onClick={() => {
-                                        if (animeData?.episodes?.length > 0) {
-                                            const firstEp = animeData.episodes[0];
+                                        if (animeEpisodes.length > 0) {
+                                            const firstEp = animeEpisodes[0];
                                             onPlay({
                                                 ...currentItem,
-                                                title: animeData.title, // Use scraper title (e.g. "Show Season 2")
+                                                title: title,
                                                 episodeNumber: firstEp.number,
                                                 seasonNumber: 1,
-                                                episodeId: firstEp.id,
-                                                episodeTitle: firstEp.title || `Episode ${firstEp.number}`,
+                                                episodeId: firstEp.episodeId,
+                                                episodeTitle: firstEp.title,
                                                 image: firstEp.image
                                             });
                                         } else if (isTV && seasonData?.episodes?.length > 0) {
@@ -362,7 +306,7 @@ export default function DetailModal({ item, onClose, onPlay, onQueueDownloads })
                                 <div className="h-8 w-[1px] bg-white/20 mx-2"></div>
 
                                 <span className="text-[#46d369] font-bold px-2 py-1 bg-black/40 rounded border border-white/10">
-                                    {details?.vote_average?.toFixed(1)}/10
+                                    {details?.vote_average ? `${details.vote_average.toFixed(1)}/10` : (details?.MAL_score ? `${details.MAL_score}/10` : '')}
                                 </span>
                                 {certification && (
                                     <div className="group relative cursor-help">
@@ -393,46 +337,44 @@ export default function DetailModal({ item, onClose, onPlay, onQueueDownloads })
                         <div className="lg:col-span-2 flex flex-col gap-10">
                             <div>
                                 <h3 className="text-sm font-bold text-textMuted uppercase tracking-wider mb-2">Synopsis</h3>
-                                <p className="text-textMain leading-relaxed text-lg font-light">
-                                    {details?.overview}
+                                <p className="text-textMain leading-relaxed text-lg font-light whitespace-pre-wrap">
+                                    {details?.overview || details?.synopsis}
                                 </p>
                             </div>
 
                             {/* TV SEASONS SECTION */}
-                            {isTV && ((isAnime || animeData) ? (
+                            {isTV && (isHiAnime ? (
                                 <div className="flex-1 flex flex-col">
                                     {/* Anime Season Selector */}
-                                    {animeSeasonsLoading ? (
-                                        <SeasonListSkeleton />
-                                    ) : filteredAnimeSeasons.length > 0 && (showSingleSeason || filteredAnimeSeasons.length > 1) && (
+                                    {moreSeasons.length > 0 && (
                                         <>
                                             <h3 className="text-sm font-bold text-textMuted uppercase tracking-wider mb-4">Seasons</h3>
                                             <div className="flex overflow-x-auto pb-4 mb-8 px-1 items-start">
-                                                {filteredAnimeSeasons.map((season, idx) => {
-                                                    const isSelected = currentAnimeId === season.id;
+                                                {moreSeasons.map((season, idx) => {
+                                                    const isSelected = currentItem.id === season.id;
 
                                                     return (
                                                         <button
                                                             key={season.id}
-                                                            onClick={() => setCurrentAnimeId(season.id)}
+                                                            onClick={() => handleRecommendationClick(season)}
                                                             title={season.title}
                                                             className={`flex-shrink-0 ${hideSeasonPosters ? 'w-56 p-3' : 'w-44 p-3'} flex flex-col gap-3 group text-left cursor-pointer relative rounded-xl transition-all ${isSelected ? 'bg-primary/10' : 'hover:bg-surfaceHighlight'}`}
                                                         >
                                                             {!hideSeasonPosters && (
                                                                 <div className={`w-full aspect-[2/3] rounded-lg overflow-hidden border-2 relative transition-all ${isSelected
                                                                     ? 'border-primary scale-105'
-                                                                    : 'border-transparent'
+                                                                    : 'border-transparent opacity-70 hover:opacity-100'
                                                                     }`}>
-                                                                    <img src={season.image} alt={season.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                                                    <img src={season.poster} alt={season.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                                                 </div>
                                                             )}
                                                             <div className="flex flex-col px-1 gap-1.5">
-                                                                <h4 className={`text-sm font-bold leading-tight transition-colors ${isSelected ? 'text-textMain' : 'text-textMain group-hover:text-primary'} ${hideSeasonPosters ? '' : 'truncate'}`}>{season.title}</h4>
-                                                                <div className={`flex items-center gap-2 text-xs font-medium transition-colors ${isSelected ? 'text-textMuted' : 'text-textMuted group-hover:text-primary'}`}>
-                                                                    <span>{season.type || 'TV'}</span>
-                                                                    <span>•</span>
-                                                                    <span>{String(season.releaseDate || "").match(/\d{4}/)?.[0] || '????'}</span>
-                                                                </div>
+                                                                <h4 className={`text-sm font-bold leading-tight transition-colors ${isSelected ? 'text-textMain' : 'text-textMain group-hover:text-primary'} ${hideSeasonPosters ? '' : 'truncate'}`}>{season.title || season.name}</h4>
+                                                                {season.alternativeTitle && (
+                                                                    <div className={`text-xs font-medium transition-colors ${isSelected ? 'text-textMuted' : 'text-textMuted group-hover:text-primary'}`}>
+                                                                        {season.alternativeTitle}
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         </button>
                                                     );
@@ -441,15 +383,15 @@ export default function DetailModal({ item, onClose, onPlay, onQueueDownloads })
                                         </>
                                     )}
 
-                                    {animeData ? (
+                                    {animeEpisodes.length > 0 ? (
                                         <div className="flex items-center justify-between mb-4">
                                             <h3 className="text-lg font-bold text-textMain normal-case tracking-tight">
-                                                {(animeData.type === 'Movie' || animeSeasons.find(s => s.id === currentAnimeId)?.type === 'Movie') ? 'Movie' : 'Episodes'} <span className="text-textMain normal-case ml-1">- {animeData.title} ({String(animeData.releaseDate || "").match(/\d{4}/)?.[0] || ''})</span>
+                                                Episodes <span className="text-textMain normal-case ml-1">- {title}</span>
                                             </h3>
                                             <button
                                                 onClick={() => {
-                                                    if (animeData.episodes?.length > 0) {
-                                                        setDownloadEpisodes(animeData.episodes);
+                                                    if (animeEpisodes.length > 0) {
+                                                        setDownloadEpisodes(animeEpisodes);
                                                         setShowDownloadModal(true);
                                                     }
                                                 }}
@@ -458,13 +400,13 @@ export default function DetailModal({ item, onClose, onPlay, onQueueDownloads })
                                                 <Download className="w-3.5 h-3.5" /> Download Season
                                             </button>
                                         </div>
-                                    ) : (
+                                    ) : !animeEpisodesLoading && (
                                         <div className="h-7 w-1/3 bg-surfaceHighlight rounded mb-4 animate-pulse" />
                                     )}
 
-                                    {(animeDataLoading || animeSeasonsLoading || (animeSeasons.length > 0 && !currentAnimeId)) ? (
+                                    {animeEpisodesLoading ? (
                                         <EpisodeListSkeleton />
-                                    ) : animeData ? (
+                                    ) : animeEpisodes.length > 0 ? (
                                         <div className="bg-surface border border-border rounded-xl overflow-hidden flex flex-col max-h-[600px] min-h-[200px]">
                                             <style>{`
                                             .custom-scrollbar::-webkit-scrollbar {
@@ -483,15 +425,15 @@ export default function DetailModal({ item, onClose, onPlay, onQueueDownloads })
                                             }
                                         `}</style>
                                             <div className="overflow-y-auto custom-scrollbar flex-1">
-                                                {animeData.episodes?.map((ep, idx) => (
+                                                {animeEpisodes.map((ep, idx) => (
                                                     <div
-                                                        key={ep.id}
+                                                        key={ep.episodeId}
                                                         onClick={() => onPlay({
                                                             ...currentItem,
-                                                            title: animeData.title, // Use scraper title
+                                                            title: title,
                                                             episodeNumber: ep.number,
                                                             seasonNumber: 1,
-                                                            episodeId: ep.id,
+                                                            episodeId: ep.episodeId,
                                                             episodeTitle: ep.title || `Episode ${ep.number}`,
                                                             image: ep.image
                                                         })}
@@ -504,7 +446,7 @@ export default function DetailModal({ item, onClose, onPlay, onQueueDownloads })
                                                         </div>
                                                         <div className="w-32 aspect-video rounded-lg overflow-hidden bg-black/20 shrink-0 relative">
                                                             {ep.image ? (
-                                                                <img src={ep.image} alt={ep.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                                                <img src={ep.image} alt={ep.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" loading="lazy" />
                                                             ) : (
                                                                 <div className="w-full h-full flex items-center justify-center text-textMuted"><Play className="w-6 h-6" /></div>
                                                             )}
@@ -514,7 +456,7 @@ export default function DetailModal({ item, onClose, onPlay, onQueueDownloads })
                                                         </div>
                                                         <div className="flex-1 flex flex-col justify-center">
                                                             <h4 className="font-bold text-textMain group-hover:text-primary transition-colors">
-                                                                {ep.title || ((animeSeasons.find(s => s.id === currentAnimeId)?.type === 'Movie' || animeData.type === 'Movie') ? animeData.title : `Episode ${ep.number}`)}
+                                                                {ep.title || `Episode ${ep.number}`}
                                                             </h4>
                                                             {ep.duration && (
                                                                 <div className="flex items-center gap-1.5 mt-2 px-2 py-1 rounded border border-border w-fit">
@@ -548,7 +490,7 @@ export default function DetailModal({ item, onClose, onPlay, onQueueDownloads })
                                 </div>
                             ) : details?.seasons && (
                                 <div className="flex-1 flex flex-col">
-                                    {(showSingleSeason || details.seasons.filter(s => s.season_number > 0).length > 1) && (
+                                    {(details.seasons.filter(s => s.season_number > 0).length > 1) && (
                                         <>
                                             <div className="flex items-center justify-between mb-3">
                                                 <h3 className="text-sm font-bold text-textMuted uppercase tracking-wider">Seasons</h3>
@@ -674,7 +616,7 @@ export default function DetailModal({ item, onClose, onPlay, onQueueDownloads })
                                 <div className="flex flex-col gap-2">
                                     <div className="flex flex-wrap gap-2">
                                         {genres.map(g => (
-                                            <span key={g.id} className="px-3 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer border bg-surfaceHighlight border-border text-textMain hover:bg-border">
+                                            <span key={g.id || g.name} className="px-3 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer border bg-surfaceHighlight border-border text-textMain hover:bg-border">
                                                 {g.name}
                                             </span>
                                         ))}
@@ -691,26 +633,42 @@ export default function DetailModal({ item, onClose, onPlay, onQueueDownloads })
 
                             <div>
                                 <h3 className="text-xs font-bold text-textMuted uppercase tracking-wider mb-3">Cast</h3>
-                                <div className="flex flex-col gap-3">
-                                    {cast.map(person => (
-                                        <div key={person.id} className="flex items-center gap-4">
-                                            <div className="w-14 h-14 rounded-full overflow-hidden bg-surfaceHighlight shrink-0">
-                                                {person.profile_path && (
-                                                    <img src={`${TMDB_POSTER_BASE}${person.profile_path}`} alt={person.name} className="w-full h-full object-cover" />
-                                                )}
+                                {cast.length > 0 ? (
+                                    <div className="flex flex-col gap-3">
+                                        {cast.map(person => (
+                                            <div key={person.id} className="flex items-center gap-4">
+                                                <div className="w-14 h-14 rounded-full overflow-hidden bg-surfaceHighlight shrink-0">
+                                                    {person.profile_path && (
+                                                        <img src={`${TMDB_POSTER_BASE}${person.profile_path}`} alt={person.name} className="w-full h-full object-cover" />
+                                                    )}
+                                                </div>
+                                                <div>
+                                                    <p className="text-base font-bold text-textMain">{person.name}</p>
+                                                    <p className="text-sm text-textMuted">{person.character}</p>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <p className="text-base font-bold text-textMain">{person.name}</p>
-                                                <p className="text-sm text-textMuted">{person.character}</p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-textMuted text-sm">No cast info available.</p>
+                                )}
                             </div>
 
                             <div>
-                                <h3 className="text-xs font-bold text-textMuted uppercase tracking-wider mb-3">Produced By</h3>
+                                <h3 className="text-xs font-bold text-textMuted uppercase tracking-wider mb-3">Studios & Producers</h3>
                                 <div className="flex flex-wrap gap-4 items-center">
+                                    {studios.map((studio, idx) => (
+                                        <span key={idx} className="px-3 py-1.5 rounded-lg bg-surfaceHighlight border border-border text-sm font-bold text-textMain">
+                                            {studio}
+                                        </span>
+                                    ))}
+                                    {producers.map((prod, idx) => (
+                                        <span key={idx} className="px-3 py-1.5 rounded-lg bg-surfaceHighlight/50 border border-border text-sm text-textMuted">
+                                            {prod}
+                                        </span>
+                                    ))}
+
+                                    {/* TMDB Production Companies */}
                                     {details?.production_companies?.map(co => (
                                         co.logo_path && (
                                             <div key={co.id} className="bg-white p-2 rounded-lg h-12 flex items-center justify-center shadow-sm cursor-pointer hover:scale-105 transition-transform">

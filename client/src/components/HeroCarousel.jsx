@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useQueries } from '@tanstack/react-query';
-import { Play, Info, ChevronLeft, ChevronRight, Clock, Pause } from 'lucide-react';
+import { Play, Info, ChevronLeft, ChevronRight, Pause, Mic, Captions } from 'lucide-react';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 const BACKEND_URL = 'http://localhost:3001';
@@ -19,14 +19,18 @@ export default function HeroCarousel({ items, onPlay, onInfo }) {
 
     // Fetch details for ALL items using React Query
     const detailsQueries = useQueries({
-        queries: (items || []).map(item => ({
-            queryKey: ['details', item.media_type, item.id],
-            queryFn: async () => {
-                const res = await axios.get(`${BACKEND_URL}/api/details/${item.media_type}/${item.id}`);
-                return res.data;
-            },
-            staleTime: 1000 * 60 * 60, // 1 hour
-        }))
+        queries: (items || []).map(item => {
+            const isTmdb = typeof item.id === 'number';
+            return {
+                queryKey: ['details', item.media_type || 'tv', item.id],
+                queryFn: async () => {
+                    const res = await axios.get(`${BACKEND_URL}/api/details/${item.media_type || 'tv'}/${item.id}`);
+                    return res.data;
+                },
+                staleTime: 1000 * 60 * 60, // 1 hour
+                enabled: isTmdb
+            };
+        })
     });
 
     const handleNext = (e) => {
@@ -77,7 +81,7 @@ export default function HeroCarousel({ items, onPlay, onInfo }) {
                 {items.map((img, idx) => (
                     <img
                         key={img.id}
-                        src={img.backdrop_path ? `${TMDB_IMAGE_BASE}${img.backdrop_path}` : ''}
+                        src={img.backdrop_path ? `${TMDB_IMAGE_BASE}${img.backdrop_path}` : (img.poster || '')}
                         alt={img.title || img.name}
                         className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${idx === currentIndex ? 'opacity-70' : 'opacity-0'}`}
                     />
@@ -92,16 +96,21 @@ export default function HeroCarousel({ items, onPlay, onInfo }) {
                     {items.map((item, idx) => {
                         const isActive = idx === currentIndex;
                         const details = detailsQueries[idx]?.data;
+                        const isHiAnime = typeof item.id === 'string';
 
                         // Metadata Logic
                         const title = item.title || item.name;
-                        const year = (item.release_date || item.first_air_date || '????').split('-')[0];
-                        const type = item.media_type === 'tv' ? 'TV Series' : 'Movie';
-                        const status = details?.status || 'Unknown';
-                        const genre = details?.genres?.[1]?.name || details?.genres?.[0]?.name;
-                        const statusColor = (status === 'Ended' || status === 'Released')
-                            ? 'bg-red-500/20 text-red-400'
-                            : 'bg-green-500/20 text-green-400';
+
+                        let year = '????';
+                        if (item.release_date || item.first_air_date) {
+                            year = (item.release_date || item.first_air_date).split('-')[0];
+                        } else if (item.aired) {
+                            const parts = item.aired.split(',');
+                            year = parts.length > 1 ? parts[1].trim() : item.aired;
+                        }
+
+                        const type = (item.media_type === 'tv' || item.type === 'TV') ? 'TV Series' : (item.type || 'Movie');
+                        const genre = details?.genres?.[1]?.name || details?.genres?.[0]?.name || (isHiAnime ? 'Anime' : null);
 
                         return (
                             <div
@@ -113,27 +122,36 @@ export default function HeroCarousel({ items, onPlay, onInfo }) {
                                 </h1>
 
                                 {/* Metadata Row */}
-                                <div className="flex flex-col gap-3 mb-6 drop-shadow-md">
-                                    <div className="flex items-center gap-4">
-                                        {/* Rating */}
-                                        <div className="flex items-center gap-2 text-[#46d369] font-bold text-lg">
-                                            <span>{item.vote_average?.toFixed(1)}/10</span>
-                                        </div>
-                                        {/* Status */}
-                                        <div className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider flex items-center gap-2 ${statusColor}`}>
-                                            <Clock className="w-3 h-3" />
-                                            {status}
-                                        </div>
+                                <div className="flex items-center gap-4 mb-6 drop-shadow-md">
+                                    {/* Rating */}
+                                    <div className="flex items-center gap-2 text-white font-bold text-lg">
+                                        <span>{item.vote_average ? `${item.vote_average.toFixed(1)}/10` : (item.rank ? `#${item.rank}` : '')}</span>
                                     </div>
 
-                                    {/* Info Line */}
-                                    <div className="flex items-center gap-3 text-gray-200 text-sm font-medium">
-                                        <span className="font-bold text-white">{year}</span>
-                                        <span className="text-gray-500">•</span>
-                                        <span className="font-bold text-white">{type}</span>
-                                        {genre && <span className="text-gray-500">•</span>}
-                                        {genre && <span className="font-bold text-white">{genre}</span>}
-                                    </div>
+                                    {/* Year */}
+                                    <span className="font-bold text-white text-lg">{year}</span>
+
+                                    {isHiAnime && item.episodes ? (
+                                        <div className="flex items-center gap-3">
+                                            <div className="px-2.5 py-1 rounded bg-white/10 border border-white/20 text-xs font-bold flex items-center gap-1.5 text-white">
+                                                <Captions className="w-3.5 h-3.5" />
+                                                <span>{item.episodes.sub}</span>
+                                            </div>
+                                            {item.episodes.dub > 0 && (
+                                                <div className="px-2.5 py-1 rounded bg-white/10 border border-white/20 text-xs font-bold flex items-center gap-1.5 text-white">
+                                                    <Mic className="w-3.5 h-3.5" />
+                                                    <span>{item.episodes.dub}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-3 text-gray-200 text-sm font-medium">
+                                            <span className="text-gray-500">•</span>
+                                            <span className="font-bold text-white">{type}</span>
+                                            {genre && <span className="text-gray-500">•</span>}
+                                            {genre && <span className="font-bold text-white">{genre}</span>}
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="flex items-center gap-6"
